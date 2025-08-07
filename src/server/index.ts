@@ -13,6 +13,8 @@ import statusRoutes from './routes/status';
 import usersRoutes from './routes/users';
 import emailsRoutes from './routes/emails';
 import calendarEventsRoutes from './routes/calendar-events';
+import scheduledResponsesRoutes from './routes/scheduled-responses';
+import jobsRoutes from './routes/jobs';
 
 const app = express();
 
@@ -62,6 +64,8 @@ app.use('/api/status', statusRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/emails', emailsRoutes);
 app.use('/api/calendar-events', calendarEventsRoutes);
+app.use('/api/scheduled-responses', scheduledResponsesRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -77,7 +81,9 @@ app.get('/', (req, res) => {
       status: '/api/status',
       users: '/api/users',
       emails: '/api/emails',
-      calendarEvents: '/api/calendar-events'
+      calendarEvents: '/api/calendar-events',
+      scheduledResponses: '/api/scheduled-responses',
+      jobs: '/api/jobs'
     }
   });
 });
@@ -134,6 +140,11 @@ async function startServer() {
     // Initialize authentication service
     await authService.initialize();
     console.log('✅ Authentication service initialized');
+    
+    // Start background jobs
+    const { jobManager } = await import('@/jobs');
+    jobManager.startAll();
+    console.log('✅ Background jobs started');
     
     // Validate configuration
     const { isValid, errors } = await import('@/utils/config').then(m => m.validateConfig());

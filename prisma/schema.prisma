@@ -33,6 +33,9 @@ model User {
   // Processing metrics
   metrics ProcessingMetrics[]
 
+  // Scheduled responses
+  scheduledResponses ScheduledResponse[]
+
   @@map("users")
 }
 
@@ -96,10 +99,52 @@ model EmailRecord {
   // Related calendar events
   calendarEvents  CalendarEventRecord[]
 
+  // Scheduled responses
+  scheduledResponses ScheduledResponse[]
+
   @@index([userId, processedAt])
   @@index([gmailMessageId])
   @@index([processingStatus])
   @@map("email_records")
+}
+
+// Store scheduled email responses (draft/queued for sending)
+model ScheduledResponse {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Related email
+  emailRecordId   String
+  emailRecord     EmailRecord @relation(fields: [emailRecordId], references: [id], onDelete: Cascade)
+  
+  // Response details
+  recipientEmail  String
+  recipientName   String?
+  subject         String
+  body            String   @db.Text
+  
+  // Proposed time slots (JSON array)
+  proposedTimeSlots Json
+  
+  // Scheduling
+  scheduledAt     DateTime  // When to send
+  status          ResponseStatus @default(DRAFT)
+  
+  // Email sending
+  sentAt          DateTime?
+  sentMessageId   String?   // Gmail message ID after sending
+  
+  // User interaction
+  lastEditedAt    DateTime?
+  editedBy        String?   // User ID who last edited
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, scheduledAt])
+  @@index([status, scheduledAt])
+  @@map("scheduled_responses")
 }
 
 // Store calendar events created by the assistant
@@ -270,6 +315,15 @@ enum ProcessingStatus {
   COMPLETED
   FAILED
   SKIPPED
+}
+
+enum ResponseStatus {
+  DRAFT          // Created, waiting for scheduled time
+  SCHEDULED      // Ready to send at scheduled time
+  SENT           // Successfully sent
+  CANCELLED      // User cancelled
+  FAILED         // Failed to send
+  EDITING        // User is currently editing
 }
 
 enum CalendarEventStatus {
