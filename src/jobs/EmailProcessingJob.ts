@@ -1,12 +1,12 @@
-import { CronJob } from 'cron';
 import { EmailRepository } from '@/database/repositories/EmailRepository';
 import { UserRepository } from '@/database/repositories/UserRepository';
 import { ScheduledResponseRepository } from '@/repositories/ScheduledResponseRepository';
-import { gmailService } from '@/services/GmailService';
 import { calendarService } from '@/services/CalendarService';
+import { gmailService } from '@/services/GmailService';
+import { CronJob } from 'cron';
 // import { openAIService } from '@/services/OpenAIService';
-import { ProcessingStatus, ResponseStatus, User } from '@prisma/client';
 import { EmailMessage } from '@/types';
+import { ProcessingStatus, User } from '@prisma/client';
 
 interface TimePreferences {
   preferredDays?: string[];
@@ -107,13 +107,14 @@ export class EmailProcessingJob {
       const lastSyncTime = lastEmail[0]?.receivedAt || new Date(Date.now() - 24 * 60 * 60 * 1000);
       const searchAfter = Math.floor(lastSyncTime.getTime() / 1000);
       
-      // Get ALL unread external emails (comprehensive approach)
-      const query = `is:unread newer_than:${searchAfter} -from:noreply -from:no-reply -from:donotreply`;
+      // Get ALL emails (inbound and outbound) for complete logging and processing
+      // This includes: received emails, sent emails, conversation threads
+      const query = `after:${searchAfter} -from:noreply -from:no-reply -from:donotreply`;
       
       console.log(`🤖 Fetching emails with query: ${query}`);
       
       const emails = await gmailService.searchEmails(query, 20);
-      console.log(`🤖 Found ${emails.length} emails to analyze`);
+      console.log(`🤖 Found ${emails.length} emails to analyze (inbound, outbound, and conversations)`);
 
       for (const email of emails) {
         await this.processSingleEmail(user.id, email);
@@ -133,9 +134,14 @@ export class EmailProcessingJob {
         return;
       }
 
-      console.log(`🤖 Processing new email: ${email.subject}`);
+      // Determine if this email is inbound (sent TO user) or outbound (sent BY user)
+      const user = await this.userRepository.findById(userId);
+      const userEmail = user?.email?.toLowerCase();
+      const isInboundEmail = !email.from.toLowerCase().includes(userEmail || '');
+      
+      console.log(`🤖 Processing ${isInboundEmail ? 'INBOUND' : 'OUTBOUND'} email: ${email.subject}`);
 
-      // Store email in database first
+      // Store email in database first (for complete logging)
       const emailRecord = await this.emailRepository.create({
         userId,
         gmailMessageId: email.id,
@@ -152,16 +158,30 @@ export class EmailProcessingJob {
         processingStatus: ProcessingStatus.PROCESSING
       });
 
-      // 1. Pre-filtering - Skip newsletters, bounces, etc.
+      // Only process INBOUND emails for demo requests (outbound emails are just logged)
+      if (!isInboundEmail) {
+        console.log(`🤖 Outbound email logged: ${email.subject}`);
+        await this.emailRepository.markAsProcessed(emailRecord.id, {
+          isDemoRequest: false,
+          intentAnalysis: {
+            isDemoRequest: false,
+            confidence: 0,
+            reasoning: "Outbound email - not processed for demo requests"
+          }
+        });
+        return;
+      }
+
+      // 1. Pre-filtering - Skip newsletters, bounces, etc. (only for inbound emails)
       if (this.shouldSkipEmail(email)) {
-        console.log(`🤖 Skipping email (pre-filter): ${email.subject}`);
+        console.log(`🤖 Skipping inbound email (pre-filter): ${email.subject}`);
         await this.emailRepository.update(emailRecord.id, {
           processingStatus: ProcessingStatus.SKIPPED
         });
         return;
       }
 
-      // 2. AI Analysis - Check if it's a demo request
+      // 2. AI Analysis - Check if it's a demo request (only for inbound emails)
       const intentAnalysis = await this.analyzeEmailIntent(email);
       
       if (!intentAnalysis.isDemoRequest) {

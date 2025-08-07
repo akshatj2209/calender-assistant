@@ -1,7 +1,7 @@
+import { EmailMessageModel } from '@/models/EmailMessage';
+import { EmailMessage } from '@/types';
 import { google } from 'googleapis';
 import { authService } from './AuthService';
-import { EmailMessage } from '@/types';
-import { EmailMessageModel } from '@/models/EmailMessage';
 
 export interface GmailQuery {
   query?: string;
@@ -71,6 +71,7 @@ export class GmailService {
         pageToken,
         labelIds
       });
+      console.log('Gmail: List messages response:', response.data);
 
       return {
         messages: response.data.messages || [],
@@ -118,6 +119,7 @@ export class GmailService {
         query: searchQuery,
         maxResults
       });
+      console.log('Gmail: Search emails response:', listResult);
 
       if (!listResult.messages || listResult.messages.length === 0) {
         return [];
