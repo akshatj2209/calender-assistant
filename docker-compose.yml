@@ -1,0 +1,69 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: gmail-assistant-db
+    environment:
+      POSTGRES_DB: gmail_assistant
+      POSTGRES_USER: gmail_app
+      POSTGRES_PASSWORD: dev_password_123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gmail_app -d gmail_assistant"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - gmail-assistant-network
+
+  # Prisma Studio (Optional - for database GUI)
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile.prisma-studio
+    container_name: gmail-assistant-prisma-studio
+    ports:
+      - "5555:5555"
+    environment:
+      - DATABASE_URL=postgresql://gmail_app:dev_password_123@postgres:5432/gmail_assistant?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gmail-assistant-network
+    profiles: ["studio"]  # Start with: docker-compose --profile studio up
+
+  # Redis (Optional - for future caching/queues)
+  redis:
+    image: redis:7-alpine
+    container_name: gmail-assistant-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - gmail-assistant-network
+    profiles: ["cache"]  # Start with: docker-compose --profile cache up
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  gmail-assistant-network:
+    driver: bridge

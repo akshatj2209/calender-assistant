@@ -1,0 +1,303 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User/Account management
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Google OAuth tokens
+  googleTokens GoogleTokens?
+
+  // User's processed emails
+  emails EmailRecord[]
+
+  // User's calendar events (created by the assistant)
+  calendarEvents CalendarEventRecord[]
+
+  // User's configuration
+  userConfig UserConfig?
+
+  // Processing metrics
+  metrics ProcessingMetrics[]
+
+  @@map("users")
+}
+
+// Store Google OAuth tokens securely
+model GoogleTokens {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  accessToken  String
+  refreshToken String?
+  tokenType    String    @default("Bearer")
+  scope        String?
+  expiresAt    DateTime?
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("google_tokens")
+}
+
+// Store processed emails
+model EmailRecord {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Gmail message info
+  gmailMessageId  String   @unique
+  gmailThreadId   String
+  
+  // Email content
+  from            String
+  to              String
+  subject         String
+  body            String   @db.Text
+  receivedAt      DateTime
+  
+  // Processing status
+  processedAt     DateTime?
+  processingStatus ProcessingStatus @default(PENDING)
+  
+  // AI Analysis results
+  isDemoRequest   Boolean?
+  intentAnalysis  Json?    // Store AI analysis results
+  timePreferences Json?    // Store extracted time preferences
+  contactInfo     Json?    // Store extracted contact information
+  
+  // Response information
+  responseGenerated Boolean @default(false)
+  responseSent      Boolean @default(false)
+  responseMessageId String?
+  
+  // Error tracking
+  errors          Json[]   @default([])
+  retryCount      Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Related calendar events
+  calendarEvents  CalendarEventRecord[]
+
+  @@index([userId, processedAt])
+  @@index([gmailMessageId])
+  @@index([processingStatus])
+  @@map("email_records")
+}
+
+// Store calendar events created by the assistant
+model CalendarEventRecord {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Related email (if created from email)
+  emailRecordId     String?
+  emailRecord       EmailRecord? @relation(fields: [emailRecordId], references: [id], onDelete: SetNull)
+  
+  // Google Calendar info
+  googleEventId     String
+  calendarId        String   @default("primary")
+  
+  // Event details
+  summary           String
+  description       String?
+  startTime         DateTime
+  endTime           DateTime
+  timezone          String
+  location          String?
+  
+  // Attendee information
+  attendeeEmail     String
+  attendeeName      String?
+  
+  // Event status
+  status            CalendarEventStatus @default(CONFIRMED)
+  attendeeResponse  AttendeeResponse    @default(NEEDS_ACTION)
+  
+  // Metadata
+  isDemo            Boolean  @default(false)
+  meetingType       String?  // 'demo', 'followup', etc.
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([googleEventId, calendarId])
+  @@index([userId, startTime])
+  @@index([attendeeEmail])
+  @@map("calendar_event_records")
+}
+
+// User-specific configuration
+model UserConfig {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Business hours
+  businessHoursStart String @default("09:00")
+  businessHoursEnd   String @default("17:00")
+  workingDays        Int[]  @default([1, 2, 3, 4, 5]) // Monday-Friday
+  timezone           String @default("America/Los_Angeles")
+  
+  // Meeting preferences
+  meetingDuration    Int    @default(30) // minutes
+  bufferTime         Int    @default(30) // minutes
+  travelBufferTime   Int    @default(60) // minutes
+  maxLookaheadDays   Int    @default(5)
+  minAdvanceNotice   Int    @default(2)  // hours
+  
+  // Email preferences
+  salesName          String?
+  companyName        String?
+  emailSignature     String?
+  autoRespond        Boolean @default(true)
+  
+  // Monitoring preferences
+  checkIntervalMinutes Int    @default(5)
+  maxEmailsPerCheck    Int    @default(10)
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("user_configs")
+}
+
+// Processing metrics and analytics
+model ProcessingMetrics {
+  id                    String   @id @default(uuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Date for metrics (daily aggregation)
+  date                  DateTime @db.Date
+  
+  // Email metrics
+  emailsProcessed       Int      @default(0)
+  demoRequestsDetected  Int      @default(0)
+  responsesGenerated    Int      @default(0)
+  responsesSent         Int      @default(0)
+  
+  // Success metrics
+  successfulProcessing  Int      @default(0)
+  failedProcessing      Int      @default(0)
+  
+  // AI metrics
+  aiAnalysisCalls       Int      @default(0)
+  aiAnalysisSuccessful  Int      @default(0)
+  
+  // Calendar metrics
+  eventsCreated         Int      @default(0)
+  eventsConfirmed       Int      @default(0)
+  
+  // Performance metrics
+  averageProcessingTime Float?   // milliseconds
+  totalProcessingTime   Float?   // milliseconds
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+  @@map("processing_metrics")
+}
+
+// System-wide settings (admin configuration)
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  
+  description String?
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_config")
+}
+
+// Activity/audit log
+model ActivityLog {
+  id          String       @id @default(uuid())
+  userId      String?
+  
+  // Activity details
+  action      ActivityType
+  resource    String       // 'email', 'calendar', 'auth', etc.
+  resourceId  String?      // ID of the affected resource
+  
+  // Context
+  description String
+  metadata    Json?        // Additional context data
+  
+  // Status
+  status      LogStatus    @default(SUCCESS)
+  error       String?
+  
+  // Request info
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("activity_logs")
+}
+
+// Enums
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum CalendarEventStatus {
+  CONFIRMED
+  TENTATIVE
+  CANCELLED
+}
+
+enum AttendeeResponse {
+  NEEDS_ACTION
+  DECLINED
+  TENTATIVE
+  ACCEPTED
+}
+
+enum ActivityType {
+  EMAIL_RECEIVED
+  EMAIL_PROCESSED
+  DEMO_DETECTED
+  RESPONSE_SENT
+  CALENDAR_EVENT_CREATED
+  USER_AUTHENTICATED
+  CONFIG_UPDATED
+  ERROR_OCCURRED
+}
+
+enum LogStatus {
+  SUCCESS
+  WARNING
+  ERROR
+}
