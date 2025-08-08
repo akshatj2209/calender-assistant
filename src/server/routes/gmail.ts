@@ -185,9 +185,9 @@ router.post('/analyze-intent', requireAuth, async (req, res) => {
 
     // Get the message
     const gmailMessage = await gmailService.getMessage(messageId);
-    const emailMessage = gmailService.searchEmails(`rfc822msgid:${messageId}`, 1);
+    const emailMessages = await gmailService.searchEmails(`rfc822msgid:${messageId}`, 1);
     
-    if (!emailMessage) {
+    if (!emailMessages || emailMessages.length === 0) {
       return res.status(404).json({
         success: false,
         error: 'Message not found',
@@ -196,7 +196,7 @@ router.post('/analyze-intent', requireAuth, async (req, res) => {
     }
 
     // Analyze with AI
-    const intentResult = await openaiService.analyzeEmailIntent(emailMessage[0]);
+    const intentResult = await openaiService.analyzeEmailIntent(emailMessages[0]);
     
     res.json({
       success: true,

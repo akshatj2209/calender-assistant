@@ -12,16 +12,45 @@ export interface CreateEmailData {
   receivedAt: Date;
 }
 
+export interface IntentAnalysis {
+  isDemoRequest: boolean;
+  confidence: number;
+  reasoning: string;
+  [key: string]: unknown;
+}
+
+export interface TimePreferences {
+  preferredDays?: string[];
+  preferredTimes?: string[];
+  timeRange?: 'morning' | 'afternoon' | 'evening' | 'flexible';
+  urgency?: 'low' | 'medium' | 'high';
+  [key: string]: unknown;
+}
+
+export interface ContactInfo {
+  name: string;
+  email: string;
+  company?: string;
+  [key: string]: unknown;
+}
+
+export interface EmailError {
+  message: string;
+  timestamp: string | Date;
+  retryAttempt: number;
+  [key: string]: unknown;
+}
+
 export interface UpdateEmailData {
   processingStatus?: ProcessingStatus;
   isDemoRequest?: boolean;
-  intentAnalysis?: any;
-  timePreferences?: any;
-  contactInfo?: any;
+  intentAnalysis?: Prisma.InputJsonValue;
+  timePreferences?: Prisma.InputJsonValue;
+  contactInfo?: Prisma.InputJsonValue;
   responseGenerated?: boolean;
   responseSent?: boolean;
   responseMessageId?: string;
-  errors?: any[];
+  errors?: Prisma.InputJsonValue[];
   retryCount?: number;
 }
 
@@ -69,22 +98,24 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
   }
 
   async update(id: string, data: UpdateEmailData): Promise<EmailRecord> {
+    const updateData: Prisma.EmailRecordUpdateInput = {
+      ...data,
+      updatedAt: new Date()
+    };
     return this.prisma.emailRecord.update({
       where: { id },
-      data: {
-        ...data,
-        updatedAt: new Date()
-      }
+      data: updateData
     });
   }
 
   async updateByGmailMessageId(gmailMessageId: string, data: UpdateEmailData): Promise<EmailRecord> {
+    const updateData: Prisma.EmailRecordUpdateInput = {
+      ...data,
+      updatedAt: new Date()
+    };
     return this.prisma.emailRecord.update({
       where: { gmailMessageId },
-      data: {
-        ...data,
-        updatedAt: new Date()
-      }
+      data: updateData
     });
   }
 
@@ -107,10 +138,8 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
       where.receivedAt = this.getDateRangeFilter(options.startDate, options.endDate);
     }
 
-    return this.prisma.emailRecord.findMany({
+    const queryOptions: Prisma.EmailRecordFindManyArgs = {
       where,
-      ...this.getPaginationOptions(options?.page, options?.limit),
-      ...this.getSortOptions(options?.sortBy || 'receivedAt', options?.sortOrder || 'desc'),
       include: {
         calendarEvents: true,
         user: {
@@ -120,7 +149,14 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
           }
         }
       }
-    });
+    };
+
+    const paginationOptions = this.getPaginationOptions(options?.page, options?.limit);
+    const sortOptions = this.getSortOptions(options?.sortBy || 'receivedAt', options?.sortOrder || 'desc');
+    
+    Object.assign(queryOptions, paginationOptions, sortOptions);
+
+    return this.prisma.emailRecord.findMany(queryOptions);
   }
 
   async findPendingEmails(userId?: string, limit: number = 10): Promise<EmailRecord[]> {
@@ -163,14 +199,16 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
 
   async markAsProcessed(id: string, result: {
     isDemoRequest?: boolean;
-    intentAnalysis?: any;
-    timePreferences?: any;
-    contactInfo?: any;
+    intentAnalysis?: IntentAnalysis;
+    timePreferences?: TimePreferences;
+    contactInfo?: ContactInfo;
   }): Promise<EmailRecord> {
     return this.update(id, {
       processingStatus: ProcessingStatus.COMPLETED,
-      ...result,
-      processingStatus: ProcessingStatus.COMPLETED
+      isDemoRequest: result.isDemoRequest,
+      intentAnalysis: result.intentAnalysis as Prisma.InputJsonValue,
+      timePreferences: result.timePreferences as Prisma.InputJsonValue,
+      contactInfo: result.contactInfo as Prisma.InputJsonValue
     });
   }
 
@@ -180,11 +218,13 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
       throw new Error(`Email with id ${id} not found`);
     }
 
-    const errors = [...(currentEmail.errors as any[]), {
+    const existingErrors = (currentEmail.errors as Prisma.JsonArray) || [];
+    const newError = {
       message: error,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       retryAttempt: currentEmail.retryCount + (incrementRetry ? 1 : 0)
-    }];
+    };
+    const errors = [...existingErrors, newError] as Prisma.InputJsonValue[];
 
     return this.update(id, {
       processingStatus: ProcessingStatus.FAILED,

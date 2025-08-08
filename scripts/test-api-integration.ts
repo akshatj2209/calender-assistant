@@ -24,6 +24,10 @@ class APIIntegrationTester {
   private results: TestResult[] = [];
   private serverProcess: ChildProcess | null = null;
 
+  getResults(): TestResult[] {
+    return this.results;
+  }
+
   async runTest(name: string, testFn: () => Promise<any>): Promise<TestResult> {
     console.log(`🧪 Testing: ${name}`);
     const startTime = Date.now();
@@ -488,7 +492,7 @@ async function main() {
   }
   
   // Exit with appropriate code
-  const hasFailures = tester.results.some(r => !r.success);
+  const hasFailures = tester.getResults().some(r => !r.success);
   process.exit(hasFailures ? 1 : 0);
 }
 

@@ -1,5 +1,5 @@
-import { ScheduledResponse, ResponseStatus } from '@prisma/client';
-import { BaseRepository } from '@/database/repositories/BaseRepository';
+import { ScheduledResponse, ResponseStatus, Prisma } from '@prisma/client';
+import { BaseRepository } from './BaseRepository';
 
 export interface CreateScheduledResponseData {
   userId: string;
@@ -8,14 +8,14 @@ export interface CreateScheduledResponseData {
   recipientName?: string;
   subject: string;
   body: string;
-  proposedTimeSlots: any; // JSON data
+  proposedTimeSlots: Prisma.InputJsonValue;
   scheduledAt: Date;
 }
 
 export interface UpdateScheduledResponseData {
   subject?: string;
   body?: string;
-  proposedTimeSlots?: any;
+  proposedTimeSlots?: Prisma.InputJsonValue;
   scheduledAt?: Date;
   status?: ResponseStatus;
   sentAt?: Date;

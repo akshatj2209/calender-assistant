@@ -58,16 +58,16 @@ router.get('/', async (req, res) => {
       },
       services: {
         gmail: {
-          status: gmailTest.status === 'fulfilled' && gmailTest.value.success ? 'healthy' : 'error',
-          ...(gmailTest.status === 'fulfilled' ? gmailTest.value : { error: 'Connection failed' })
+          status: gmailTest.status === 'fulfilled' && (gmailTest.value as any)?.success ? 'healthy' : 'error',
+          ...(gmailTest.status === 'fulfilled' ? (gmailTest.value as any) : { error: 'Connection failed' })
         },
         calendar: {
-          status: calendarTest.status === 'fulfilled' && calendarTest.value.success ? 'healthy' : 'error',
-          ...(calendarTest.status === 'fulfilled' ? calendarTest.value : { error: 'Connection failed' })
+          status: calendarTest.status === 'fulfilled' && (calendarTest.value as any)?.success ? 'healthy' : 'error',
+          ...(calendarTest.status === 'fulfilled' ? (calendarTest.value as any) : { error: 'Connection failed' })
         },
         openai: {
-          status: openaiTest.status === 'fulfilled' && openaiTest.value.success ? 'healthy' : 'error',
-          ...(openaiTest.status === 'fulfilled' ? openaiTest.value : { error: 'Connection failed' })
+          status: openaiTest.status === 'fulfilled' && (openaiTest.value as any)?.success ? 'healthy' : 'error',
+          ...(openaiTest.status === 'fulfilled' ? (openaiTest.value as any) : { error: 'Connection failed' })
         }
       },
       configuration: {

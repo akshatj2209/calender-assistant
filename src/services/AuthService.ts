@@ -1,5 +1,5 @@
 import { config, tokenPath } from '@/utils/config';
-import fs from 'fs/promises';
+import { promises as fs } from 'fs';
 import { google } from 'googleapis';
 
 export interface GoogleAuthTokens {

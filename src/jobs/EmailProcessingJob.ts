@@ -2,35 +2,51 @@ import { EmailRepository } from '@/database/repositories/EmailRepository';
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { UserRepository, UserWithTokens } from '@/database/repositories/UserRepository';
 import { calendarService } from '@/services/CalendarService';
-import { gmailService, GmailService } from '@/services/GmailService';
+import { GmailService } from '@/services/GmailService';
 import { CronJob } from 'cron';
 // import { openAIService } from '@/services/OpenAIService';
 import { EmailMessage } from '@/types';
-import { ProcessingStatus, User } from '@prisma/client';
+import { Prisma, ProcessingStatus } from '@prisma/client';
 
 interface TimePreferences {
   preferredDays?: string[];
   preferredTimes?: string[];
   timeRange?: 'morning' | 'afternoon' | 'evening' | 'flexible';
   urgency?: 'low' | 'medium' | 'high';
+  [key: string]: unknown;
 }
 
 interface ContactInfo {
   name: string;
   email: string;
   company?: string;
+  [key: string]: unknown;
 }
 
 interface IntentAnalysis {
   isDemoRequest: boolean;
   confidence: number;
   reasoning: string;
+  [key: string]: unknown;
 }
 
 interface TimeSlot {
   start: Date;
   end: Date;
   formatted: string;
+  [key: string]: unknown;
+}
+
+interface CalendarEvent {
+  start?: {
+    dateTime?: string;
+    date?: string;
+  };
+  end?: {
+    dateTime?: string;
+    date?: string;
+  };
+  [key: string]: unknown;
 }
 
 export class EmailProcessingJob {
@@ -160,7 +176,7 @@ export class EmailProcessingJob {
     }
   }
 
-  private async processSingleEmail(userId: string, email: EmailMessage, userGmailService?: any): Promise<void> {
+  private async processSingleEmail(userId: string, email: EmailMessage, userGmailService?: GmailService): Promise<void> {
     try {
       // Check if email already exists
       const existing = await this.emailRepository.findByGmailMessageId(email.id);
@@ -281,7 +297,7 @@ export class EmailProcessingJob {
         recipientName: contactInfo.name,
         subject: response.subject,
         body: response.body,
-        proposedTimeSlots: timeSlots,
+        proposedTimeSlots: timeSlots as Prisma.InputJsonValue,
         scheduledAt
       });
 
@@ -484,7 +500,7 @@ export class EmailProcessingJob {
       const events = await calendarService.getEvents('primary', {
         timeMin: startDate,
         timeMax: endDate
-      });
+      }) as unknown as CalendarEvent[];
 
       // Generate time slots (simplified algorithm)
       const timeSlots = this.generateTimeSlots(startDate, endDate, events || [], preferences, minSlotStartTime);
@@ -498,7 +514,7 @@ export class EmailProcessingJob {
     }
   }
 
-  private generateTimeSlots(startDate: Date, endDate: Date, events: any[], preferences: TimePreferences, minSlotStartTime: Date): TimeSlot[] {
+  private generateTimeSlots(startDate: Date, endDate: Date, events: CalendarEvent[], preferences: TimePreferences, minSlotStartTime: Date): TimeSlot[] {
     const slots: TimeSlot[] = [];
     const current = new Date(startDate);
     
@@ -543,9 +559,9 @@ export class EmailProcessingJob {
 
       // Check if slot conflicts with existing events
       const slotEnd = new Date(current.getTime() + 30 * 60 * 1000); // 30 minutes
-      const hasConflict = events.some((event: any) => {
-        const eventStart = new Date(event.start?.dateTime || event.start?.date);
-        const eventEnd = new Date(event.end?.dateTime || event.end?.date);
+      const hasConflict = events.some((event: CalendarEvent) => {
+        const eventStart = new Date(event.start?.dateTime || event.start?.date || '');
+        const eventEnd = new Date(event.end?.dateTime || event.end?.date || '');
         return current < eventEnd && slotEnd > eventStart;
       });
 

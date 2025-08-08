@@ -140,10 +140,8 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
       where.startTime = this.getDateRangeFilter(options.startDate, options.endDate);
     }
 
-    return this.prisma.calendarEventRecord.findMany({
+    const queryOptions: Prisma.CalendarEventRecordFindManyArgs = {
       where,
-      ...this.getPaginationOptions(options?.page, options?.limit),
-      ...this.getSortOptions(options?.sortBy || 'startTime', options?.sortOrder || 'asc'),
       include: {
         emailRecord: true,
         user: {
@@ -153,7 +151,14 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
           }
         }
       }
-    });
+    };
+
+    const paginationOptions = this.getPaginationOptions(options?.page, options?.limit);
+    const sortOptions = this.getSortOptions(options?.sortBy || 'startTime', options?.sortOrder || 'asc');
+    
+    Object.assign(queryOptions, paginationOptions, sortOptions);
+
+    return this.prisma.calendarEventRecord.findMany(queryOptions);
   }
 
   async findUpcomingEvents(userId?: string, days: number = 7): Promise<CalendarEventRecord[]> {

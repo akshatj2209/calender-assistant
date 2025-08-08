@@ -72,15 +72,20 @@ export class UserRepository extends BaseRepository<User> {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
   }): Promise<User[]> {
-    return this.prisma.user.findMany({
+    const queryOptions: Prisma.UserFindManyArgs = {
       where,
-      ...this.getPaginationOptions(options?.page, options?.limit),
-      ...this.getSortOptions(options?.sortBy, options?.sortOrder),
       include: {
         googleTokens: true,
         userConfig: true
       }
-    });
+    };
+
+    const paginationOptions = this.getPaginationOptions(options?.page, options?.limit);
+    const sortOptions = this.getSortOptions(options?.sortBy, options?.sortOrder);
+    
+    Object.assign(queryOptions, paginationOptions, sortOptions);
+
+    return this.prisma.user.findMany(queryOptions);
   }
 
   async findOrCreate(email: string, name?: string): Promise<UserWithTokens> {
