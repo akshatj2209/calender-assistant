@@ -32,14 +32,15 @@ export const useAuth = () => {
       // Verify user exists and has valid tokens
       const response = await api.get(`/auth/status?userId=${userId}`);
       
-      if (response.data.authenticated) {
+      const responseData = response.data as any;
+      if (responseData?.authenticated) {
         setUser({
-          id: response.data.user.id,
-          email: response.data.user.email,
-          name: response.data.user.name,
-          hasGoogleTokens: response.data.hasValidTokens
+          id: responseData.user?.id,
+          email: responseData.user?.email,
+          name: responseData.user?.name,
+          hasGoogleTokens: responseData.hasValidTokens
         });
-        console.log('✅ User authenticated:', response.data.user.email);
+        console.log('✅ User authenticated:', responseData.user?.email);
       } else {
         console.log('❌ User not authenticated');
         setUser(null);
@@ -94,7 +95,7 @@ export const useAuth = () => {
     try {
       const response = await api.post('/auth/refresh', { userId: user.id });
       
-      if (response.data.success) {
+      if ((response.data as any)?.success) {
         console.log('🔄 Tokens refreshed successfully');
         return true;
       }

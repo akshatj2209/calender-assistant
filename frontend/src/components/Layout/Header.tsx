@@ -1,19 +1,23 @@
 import React from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useAuth } from '../../hooks/useAuth';
 
 interface HeaderProps {
   onRefresh: () => void;
-  activeTab: 'overview' | 'emails' | 'calendar';
-  onTabChange: (tab: 'overview' | 'emails' | 'calendar') => void;
+  activeTab: 'overview' | 'emails' | 'calendar' | 'scheduled-responses';
+  onTabChange: (tab: 'overview' | 'emails' | 'calendar' | 'scheduled-responses') => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ onRefresh, activeTab, onTabChange }) => {
   const { user, logout } = useAuth();
+  const router = useRouter();
   
   const tabs = [
-    { id: 'overview' as const, label: 'Overview', icon: '📊' },
-    { id: 'emails' as const, label: 'Emails', icon: '📧' },
-    { id: 'calendar' as const, label: 'Calendar', icon: '📅' }
+    { id: 'overview' as const, label: 'Overview', icon: '📊', href: '/' },
+    { id: 'emails' as const, label: 'Emails', icon: '📧', href: '/' },
+    { id: 'calendar' as const, label: 'Calendar', icon: '📅', href: '/' },
+    { id: 'scheduled-responses' as const, label: 'Responses', icon: '📤', href: '/scheduled-responses' }
   ];
 
   const handleLogout = async () => {
@@ -37,20 +41,37 @@ const Header: React.FC<HeaderProps> = ({ onRefresh, activeTab, onTabChange }) =>
 
           {/* Navigation Tabs */}
           <nav className="flex space-x-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => onTabChange(tab.id)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2 ${
-                  activeTab === tab.id
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
+            {tabs.map((tab) => {
+              const handleTabClick = () => {
+                if (tab.href === '/' && router.pathname === '/') {
+                  // If clicking on dashboard tabs while on homepage, use onTabChange
+                  onTabChange(tab.id);
+                } else {
+                  // Navigate to different page
+                  router.push(tab.href);
+                }
+              };
+
+              // Determine if tab is active
+              const isActive = router.pathname === tab.href 
+                ? (tab.href === '/' ? activeTab === tab.id : true)
+                : false;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={handleTabClick}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2 ${
+                    isActive
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </nav>
 
           {/* Actions */}

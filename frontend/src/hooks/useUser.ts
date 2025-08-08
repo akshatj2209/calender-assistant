@@ -27,8 +27,8 @@ export const useUser = () => {
         if (savedUserId) {
           try {
             const response = await api.users.getById(savedUserId);
-            setCurrentUser(response.data.user);
-            console.log('✅ Loaded existing user:', response.data.user.email);
+            setCurrentUser((response.data as any).user);
+            console.log('✅ Loaded existing user:', (response.data as any).user.email);
             return;
           } catch (err) {
             console.warn('⚠️ Saved user not found, will create new one');
@@ -43,7 +43,7 @@ export const useUser = () => {
           name: 'Demo User'
         });
         
-        const user = response.data.user;
+        const user = (response.data as any).user;
         setCurrentUser(user);
         localStorage.setItem('gmail_assistant_user_id', user.id);
         console.log('✅ Created new user:', user.email);
@@ -67,7 +67,7 @@ export const useUser = () => {
       // Try to find existing user by email
       try {
         const response = await api.users.getByEmail(email);
-        const user = response.data.user;
+        const user = (response.data as any).user;
         setCurrentUser(user);
         localStorage.setItem('gmail_assistant_user_id', user.id);
         console.log('✅ Switched to existing user:', user.email);
@@ -75,7 +75,7 @@ export const useUser = () => {
       } catch {
         // User doesn't exist, create new one
         const response = await api.users.create({ email, name });
-        const user = response.data.user;
+        const user = (response.data as any).user;
         setCurrentUser(user);
         localStorage.setItem('gmail_assistant_user_id', user.id);
         console.log('✅ Created and switched to new user:', user.email);

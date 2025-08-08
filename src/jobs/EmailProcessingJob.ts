@@ -1,6 +1,6 @@
 import { EmailRepository } from '@/database/repositories/EmailRepository';
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
-import { UserRepository } from '@/database/repositories/UserRepository';
+import { UserRepository, UserWithTokens } from '@/database/repositories/UserRepository';
 import { calendarService } from '@/services/CalendarService';
 import { gmailService } from '@/services/GmailService';
 import { CronJob } from 'cron';
@@ -73,8 +73,8 @@ export class EmailProcessingJob {
     console.log('🤖 Starting email sync and processing...');
 
     try {
-      // Get all active users
-      const users = await this.userRepository.findMany({});
+      // Get all active users (includes googleTokens by default)
+      const users = await this.userRepository.findMany({}) as UserWithTokens[];
       
       for (const user of users) {
         try {
@@ -92,9 +92,34 @@ export class EmailProcessingJob {
     }
   }
 
-  private async processUserEmails(user: User): Promise<void> {
+  private async processUserEmails(user: UserWithTokens): Promise<void> {
     try {
       console.log(`🤖 Processing emails for user: ${user.email}`);
+
+      // Skip users without valid Google tokens
+      if (!user.googleTokens || !user.googleTokens.accessToken) {
+        console.log(`🤖 User ${user.email} has no Google tokens, skipping email processing`);
+        return;
+      }
+
+      // TODO: Initialize GmailService with user-specific tokens
+      // For now, we need to ensure this job only processes emails for the authenticated user
+      // This is a critical fix to prevent wrong user assignment
+      
+      // Get the authenticated user's profile to verify we're processing the right user
+      try {
+        const profile = await gmailService.getProfile();
+        const authenticatedEmail = profile.emailAddress?.toLowerCase();
+        const targetEmail = user.email?.toLowerCase();
+        
+        if (authenticatedEmail !== targetEmail) {
+          console.log(`🤖 Skipping user ${user.email} - not the authenticated user (authenticated: ${authenticatedEmail})`);
+          return;
+        }
+      } catch (error) {
+        console.error(`🤖 Failed to get Gmail profile for user ${user.email}, skipping:`, error);
+        return;
+      }
 
       // Get user's last processed email time (last 24 hours max)
       const lastEmail = await this.emailRepository.findMany({
@@ -111,10 +136,10 @@ export class EmailProcessingJob {
       // This includes: received emails, sent emails, conversation threads
       const query = `after:${searchAfter} -from:noreply -from:no-reply -from:donotreply`;
       
-      console.log(`🤖 Fetching emails with query: ${query}`);
+      console.log(`🤖 Fetching emails with query: ${query} for user: ${user.email}`);
       
       const emails = await gmailService.searchEmails(query, 20);
-      console.log(`🤖 Found ${emails.length} emails to analyze (inbound, outbound, and conversations)`);
+      console.log(`🤖 Found ${emails.length} emails to analyze for user ${user.email} (inbound, outbound, and conversations)`);
 
       for (const email of emails) {
         await this.processSingleEmail(user.id, email);
@@ -137,7 +162,24 @@ export class EmailProcessingJob {
       // Determine if this email is inbound (sent TO user) or outbound (sent BY user)
       const user = await this.userRepository.findById(userId);
       const userEmail = user?.email?.toLowerCase();
-      const isInboundEmail = !email.from.toLowerCase().includes(userEmail || '');
+      const emailFrom = email.from.toLowerCase();
+      const emailTo = email.to.toLowerCase();
+      const isInboundEmail = !emailFrom.includes(userEmail || '');
+      
+      console.log(`🤖 Email analysis for user ${userEmail}:`);
+      console.log(`🤖   - Email from: ${emailFrom}`);
+      console.log(`🤖   - Email to: ${emailTo}`);
+      console.log(`🤖   - User email: ${userEmail}`);
+      console.log(`🤖   - Classified as: ${isInboundEmail ? 'INBOUND' : 'OUTBOUND'}`);
+      
+      // Additional safety check: verify this email actually belongs to this user
+      if (!emailFrom.includes(userEmail || '') && !emailTo.includes(userEmail || '')) {
+        console.error(`🤖 ⚠️  CRITICAL: Email doesn't belong to user ${userEmail}! Skipping to prevent wrong assignment.`);
+        console.error(`🤖   - Email from: ${emailFrom}`);
+        console.error(`🤖   - Email to: ${emailTo}`);
+        console.error(`🤖   - Subject: ${email.subject}`);
+        return;
+      }
       
       console.log(`🤖 Processing ${isInboundEmail ? 'INBOUND' : 'OUTBOUND'} email: ${email.subject}`);
 
@@ -215,7 +257,14 @@ export class EmailProcessingJob {
       const scheduledAt = new Date();
       scheduledAt.setHours(scheduledAt.getHours() + 1);
 
-      await this.scheduledResponseRepository.create({
+      console.log(`🤖 Creating scheduled response:`);
+      console.log(`🤖   - Assigned to userId: ${userId}`);
+      console.log(`🤖   - User email: ${user?.email}`);
+      console.log(`🤖   - Recipient: ${contactInfo.name} <${contactInfo.email}>`);
+      console.log(`🤖   - Subject: ${response.subject}`);
+      console.log(`🤖   - Scheduled for: ${scheduledAt.toISOString()}`);
+
+      const createdResponse = await this.scheduledResponseRepository.create({
         userId,
         emailRecordId: emailRecord.id,
         recipientEmail: contactInfo.email,
@@ -225,6 +274,8 @@ export class EmailProcessingJob {
         proposedTimeSlots: timeSlots,
         scheduledAt
       });
+
+      console.log(`🤖 ✅ Scheduled response created with ID: ${createdResponse.id}`);
 
       // 7. Mark email as processed
       await this.emailRepository.markAsProcessed(emailRecord.id, {

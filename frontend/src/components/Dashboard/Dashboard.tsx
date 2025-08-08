@@ -19,7 +19,7 @@ interface DashboardData {
 }
 
 const Dashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'emails' | 'calendar'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'emails' | 'calendar' | 'scheduled-responses'>('overview');
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,19 +49,19 @@ const Dashboard: React.FC = () => {
 
       // Process results with fallbacks
       const emails = emailsResult.status === 'fulfilled' 
-        ? (emailsResult.value.data.emails || [])
+        ? ((emailsResult.value.data as any)?.emails || [])
         : [];
       
       const calendarEvents = eventsResult.status === 'fulfilled' 
-        ? (eventsResult.value.data.events || [])
+        ? ((eventsResult.value.data as any)?.events || [])
         : [];
 
       const emailStats = emailStatsResult.status === 'fulfilled' 
-        ? emailStatsResult.value.data.stats 
+        ? (emailStatsResult.value.data as any)?.stats 
         : { total: 0, demoRequests: 0, responsesSent: 0 };
 
       const calendarStats = calendarStatsResult.status === 'fulfilled' 
-        ? calendarStatsResult.value.data.stats 
+        ? (calendarStatsResult.value.data as any)?.stats 
         : { totalEvents: 0 };
 
       // Log what we got

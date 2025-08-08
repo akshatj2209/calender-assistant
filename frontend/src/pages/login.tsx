@@ -102,7 +102,7 @@ const LoginPage: React.FC = () => {
 
           {/* Features */}
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">What you'll get:</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">What you&apos;ll get:</h3>
             <ul className="space-y-2 text-sm text-gray-600">
               <li className="flex items-center">
                 <span className="mr-2 text-green-500">✓</span>
