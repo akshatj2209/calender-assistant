@@ -84,6 +84,7 @@ model EmailRecord {
   subject         String
   body            String   @db.Text
   receivedAt      DateTime
+  direction       EmailDirection @default(INBOUND)
   
   // Processing status
   processedAt     DateTime?
@@ -212,5 +213,10 @@ enum CalendarEventStatus {
   CONFIRMED
   TENTATIVE
   CANCELLED
+}
+
+enum EmailDirection {
+  INBOUND   // Emails received by the user
+  OUTBOUND  // Emails sent by the user
 }
 

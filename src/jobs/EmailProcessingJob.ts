@@ -6,7 +6,7 @@ import { calendarService } from '@/services/CalendarService';
 import { GmailService } from '@/services/GmailService';
 import { openaiService } from '@/services/OpenAIService';
 import { EmailMessage } from '@/types';
-import { Prisma, ProcessingStatus } from '@prisma/client';
+import { EmailDirection, Prisma, ProcessingStatus } from '@prisma/client';
 import { CronJob } from 'cron';
 
 interface TimePreferences {
@@ -161,6 +161,7 @@ export class EmailProcessingJob {
       
       // Get ALL emails (inbound and outbound) for complete logging and processing
       // This includes: received emails, sent emails, conversation threads
+      // Use OR operator to search both inbox and sent emails
       const query = `after:${searchAfter} -from:noreply -from:no-reply -from:donotreply`;
       
       console.log(`🤖 Fetching emails with query: ${query} for user: ${user.email}`);
@@ -202,6 +203,7 @@ export class EmailProcessingJob {
       const emailFrom = email.from.toLowerCase();
       const emailTo = email.to.toLowerCase();
       const isInboundEmail = !emailFrom.includes(userEmail || '');
+      const emailDirection = isInboundEmail ? EmailDirection.INBOUND : EmailDirection.OUTBOUND;
       
       console.log(`🤖 Email analysis for user ${userEmail}:`);
       console.log(`🤖   - Email from: ${emailFrom}`);
@@ -230,7 +232,8 @@ export class EmailProcessingJob {
         to: email.to,
         subject: email.subject,
         body: email.body,
-        receivedAt: email.receivedAt || new Date()
+        receivedAt: email.receivedAt || new Date(),
+        direction: emailDirection
       });
 
       // Mark as processing

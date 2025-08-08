@@ -1,4 +1,4 @@
-import { EmailRecord, ProcessingStatus, Prisma } from '@prisma/client';
+import { EmailRecord, ProcessingStatus, EmailDirection, Prisma } from '@prisma/client';
 import { BaseRepository } from './BaseRepository';
 
 export interface CreateEmailData {
@@ -11,6 +11,7 @@ export interface CreateEmailData {
   subject: string;
   body: string;
   receivedAt: Date;
+  direction?: EmailDirection;
   isDemoRequest?: boolean;
 }
 
@@ -26,6 +27,7 @@ export interface UpdateEmailData {
 export interface EmailSearchOptions {
   userId?: string;
   processingStatus?: ProcessingStatus;
+  direction?: EmailDirection;
   isDemoRequest?: boolean;
   responseGenerated?: boolean;
   responseSent?: boolean;
@@ -99,6 +101,7 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
 
     if (options?.userId) where.userId = options.userId;
     if (options?.processingStatus) where.processingStatus = options.processingStatus;
+    if (options?.direction) where.direction = options.direction;
     if (options?.isDemoRequest !== undefined) where.isDemoRequest = options.isDemoRequest;
     if (options?.responseGenerated !== undefined) where.responseGenerated = options.responseGenerated;
     if (options?.responseSent !== undefined) where.responseSent = options.responseSent;
@@ -161,6 +164,26 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
       startDate: options?.startDate,
       endDate: options?.endDate,
       limit: options?.limit,
+      sortBy: 'receivedAt',
+      sortOrder: 'desc'
+    });
+  }
+
+  async findInboundEmails(userId?: string, limit: number = 50): Promise<EmailRecord[]> {
+    return this.findMany({
+      userId,
+      direction: EmailDirection.INBOUND,
+      limit,
+      sortBy: 'receivedAt',
+      sortOrder: 'desc'
+    });
+  }
+
+  async findOutboundEmails(userId?: string, limit: number = 50): Promise<EmailRecord[]> {
+    return this.findMany({
+      userId,
+      direction: EmailDirection.OUTBOUND,
+      limit,
       sortBy: 'receivedAt',
       sortOrder: 'desc'
     });

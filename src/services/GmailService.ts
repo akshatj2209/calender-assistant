@@ -86,17 +86,25 @@ export class GmailService {
       query = '',
       maxResults = 10,
       pageToken,
-      labelIds = ['INBOX']
+      labelIds
     } = options;
 
     try {
-      const response = await this.gmail.users.messages.list({
+      // Build request parameters - only include labelIds if they are explicitly provided
+      const requestParams: any = {
         userId: 'me',
         q: query,
         maxResults,
-        pageToken,
-        labelIds
-      });
+        pageToken
+      };
+
+      // Only add labelIds if they are explicitly provided
+      // This allows the query to use its own label filtering (like "in:inbox OR in:sent")
+      if (labelIds && labelIds.length > 0) {
+        requestParams.labelIds = labelIds;
+      }
+
+      const response = await this.gmail.users.messages.list(requestParams);
       console.log('Gmail: List messages response:', response.data);
 
       return {
@@ -143,7 +151,8 @@ export class GmailService {
     try {
       const listResult = await this.listMessages({
         query: searchQuery,
-        maxResults
+        maxResults,
+        labelIds: undefined // Let the query handle label filtering
       });
       console.log('Gmail: Search emails response:', listResult);
 
