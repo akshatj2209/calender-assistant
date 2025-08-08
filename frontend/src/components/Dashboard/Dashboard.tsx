@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useUser } from '../../hooks/useUser';
-import EmailList from '../Email/EmailList';
 import CalendarView from '../Calendar/CalendarView';
-import StatsCards from './StatsCards';
+import EmailList from '../Email/EmailList';
 import Header from '../Layout/Header';
 import LoadingSpinner from '../UI/LoadingSpinner';
+import StatsCards from './StatsCards';
 
 interface DashboardData {
   emails: any[];
@@ -40,9 +40,10 @@ const Dashboard: React.FC = () => {
       console.log('📊 Fetching dashboard data for user:', currentUser.email);
 
       // Fetch all data in parallel with individual error handling
-      const [emailsResult, eventsResult, emailStatsResult, calendarStatsResult] = await Promise.allSettled([
+      // Note: Use live Google Calendar upcoming endpoint so we include external events
+      const [emailsResult, googleEventsResult, emailStatsResult, calendarStatsResult] = await Promise.allSettled([
         api.get(`/emails?limit=10&userId=${currentUser.id}`),
-        api.get(`/calendar-events/upcoming?days=7&userId=${currentUser.id}`),
+        api.get(`/calendar/upcoming?days=7`),
         api.get(`/emails/stats?days=30&userId=${currentUser.id}`),
         api.get(`/calendar-events/stats?days=30&userId=${currentUser.id}`)
       ]);
@@ -52,8 +53,30 @@ const Dashboard: React.FC = () => {
         ? ((emailsResult.value.data as any)?.emails || [])
         : [];
       
-      const calendarEvents = eventsResult.status === 'fulfilled' 
-        ? ((eventsResult.value.data as any)?.events || [])
+      // Map Google Calendar events to UI shape expected by CalendarView
+      const calendarEvents = googleEventsResult.status === 'fulfilled'
+        ? (((googleEventsResult.value.data as any)?.events || []).map((ev: any) => {
+            const startDateTime = ev?.start?.dateTime || ev?.start?.date;
+            const endDateTime = ev?.end?.dateTime || ev?.end?.date;
+            const timezone = ev?.start?.timezone || ev?.start?.timeZone || 'UTC';
+            const attendees = Array.isArray(ev?.attendees) ? ev.attendees : [];
+            const primaryAttendee = attendees.find((a: any) => !a.organizer) || attendees[0] || {};
+            const statusRaw = (ev?.status || 'confirmed') as string;
+            const status = statusRaw === 'confirmed' ? 'confirmed' : statusRaw === 'cancelled' ? 'cancelled' : 'scheduled';
+            return {
+              id: ev.id,
+              summary: ev.summary || 'Busy',
+              description: ev.description,
+              startTime: startDateTime,
+              endTime: endDateTime,
+              timezone,
+              attendeeEmail: primaryAttendee.email || '',
+              attendeeName: primaryAttendee.displayName || primaryAttendee.name || undefined,
+              isDemo: false,
+              status,
+              meetingType: 'meeting',
+            };
+          }))
         : [];
 
       const emailStats = emailStatsResult.status === 'fulfilled' 
@@ -86,9 +109,9 @@ const Dashboard: React.FC = () => {
       setDashboardData(data);
 
       // Log any failed requests
-      [emailsResult, eventsResult, emailStatsResult, calendarStatsResult].forEach((result, index) => {
+      [emailsResult, googleEventsResult, emailStatsResult, calendarStatsResult].forEach((result, index) => {
         if (result.status === 'rejected') {
-          const endpoints = ['/emails', '/calendar-events/upcoming', '/emails/stats', '/calendar-events/stats'];
+          const endpoints = ['/emails', '/api/calendar/upcoming', '/emails/stats', '/calendar-events/stats'];
           console.warn(`⚠️ Failed to fetch ${endpoints[index]}:`, result.reason);
         }
       });

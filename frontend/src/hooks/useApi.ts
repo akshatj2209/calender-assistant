@@ -160,45 +160,6 @@ export const useApi = () => {
     ),
   };
 
-  // Calendar Events API
-  const calendarEvents = {
-    getById: useCallback((id: string) => apiClient.get(`/calendar-events/${id}`), []),
-    getByGoogleId: useCallback((googleEventId: string) => 
-      apiClient.get(`/calendar-events/google/${googleEventId}`), []
-    ),
-    create: useCallback((eventData: any) => apiClient.post('/calendar-events', eventData), []),
-    update: useCallback((id: string, eventData: any) => apiClient.put(`/calendar-events/${id}`, eventData), []),
-    delete: useCallback((id: string) => apiClient.delete(`/calendar-events/${id}`), []),
-    search: useCallback((params: any) => {
-      const searchParams = new URLSearchParams(params);
-      return apiClient.get(`/calendar-events?${searchParams}`);
-    }, []),
-    getUpcoming: useCallback((params?: { userId?: string; days?: number }) => {
-      const searchParams = new URLSearchParams();
-      if (params?.userId) searchParams.set('userId', params.userId);
-      if (params?.days) searchParams.set('days', params.days.toString());
-      return apiClient.get(`/calendar-events/upcoming?${searchParams}`);
-    }, []),
-    getDemoEvents: useCallback((userId?: string, params?: any) => {
-      const searchParams = new URLSearchParams();
-      if (userId) searchParams.set('userId', userId);
-      if (params?.status) searchParams.set('status', params.status);
-      if (params?.startDate) searchParams.set('startDate', params.startDate);
-      if (params?.endDate) searchParams.set('endDate', params.endDate);
-      if (params?.limit) searchParams.set('limit', params.limit.toString());
-      const queryString = searchParams.toString() ? `?${searchParams}` : '';
-      return apiClient.get(`/calendar-events/demo-events${queryString}`);
-    }, []),
-    getByAttendee: useCallback((email: string) => apiClient.get(`/calendar-events/attendee/${email}`), []),
-    getStats: useCallback((params?: { userId?: string; days?: number }) => {
-      const searchParams = new URLSearchParams();
-      if (params?.userId) searchParams.set('userId', params.userId);
-      if (params?.days) searchParams.set('days', params.days.toString());
-      return apiClient.get(`/calendar-events/stats?${searchParams}`);
-    }, []),
-    confirm: useCallback((id: string) => apiClient.post(`/calendar-events/${id}/confirm`, {}), []),
-    cancel: useCallback((id: string) => apiClient.post(`/calendar-events/${id}/cancel`, {}), []),
-  };
 
   // System API
   const system = {
@@ -216,7 +177,7 @@ export const useApi = () => {
     // Organized API methods
     users,
     emails,
-    calendarEvents,
+    // Calendar DB metrics endpoints can be called via direct get/post when needed
     system,
     
     // Direct methods for custom endpoints
