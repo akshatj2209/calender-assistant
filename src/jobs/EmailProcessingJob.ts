@@ -2,7 +2,7 @@ import { EmailRepository } from '@/database/repositories/EmailRepository';
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { UserRepository, UserWithTokens } from '@/database/repositories/UserRepository';
 import { calendarService } from '@/services/CalendarService';
-import { gmailService } from '@/services/GmailService';
+import { gmailService, GmailService } from '@/services/GmailService';
 import { CronJob } from 'cron';
 // import { openAIService } from '@/services/OpenAIService';
 import { EmailMessage } from '@/types';
@@ -102,22 +102,32 @@ export class EmailProcessingJob {
         return;
       }
 
-      // TODO: Initialize GmailService with user-specific tokens
-      // For now, we need to ensure this job only processes emails for the authenticated user
-      // This is a critical fix to prevent wrong user assignment
+      // Initialize GmailService with user-specific tokens
+      if (!user.googleTokens.accessToken || !user.googleTokens.refreshToken) {
+        console.log(`🤖 User ${user.email} has incomplete Google tokens, skipping`);
+        return;
+      }
+
+      // Create a user-specific Gmail service instance
+      const userGmailService = new GmailService();
       
-      // Get the authenticated user's profile to verify we're processing the right user
+      // Set user-specific tokens
       try {
-        const profile = await gmailService.getProfile();
+        userGmailService.setUserTokens(user.googleTokens.accessToken, user.googleTokens.refreshToken);
+        
+        // Verify we can access the user's Gmail by getting their profile
+        const profile = await userGmailService.getProfile();
         const authenticatedEmail = profile.emailAddress?.toLowerCase();
         const targetEmail = user.email?.toLowerCase();
         
         if (authenticatedEmail !== targetEmail) {
-          console.log(`🤖 Skipping user ${user.email} - not the authenticated user (authenticated: ${authenticatedEmail})`);
+          console.error(`🤖 ⚠️ CRITICAL: Token mismatch! Expected ${targetEmail}, got ${authenticatedEmail}`);
           return;
         }
+        
+        console.log(`🤖 ✅ Successfully authenticated Gmail service for user: ${user.email}`);
       } catch (error) {
-        console.error(`🤖 Failed to get Gmail profile for user ${user.email}, skipping:`, error);
+        console.error(`🤖 Failed to authenticate Gmail service for user ${user.email}, skipping:`, error);
         return;
       }
 
@@ -138,11 +148,11 @@ export class EmailProcessingJob {
       
       console.log(`🤖 Fetching emails with query: ${query} for user: ${user.email}`);
       
-      const emails = await gmailService.searchEmails(query, 20);
+      const emails = await userGmailService.searchEmails(query, 20);
       console.log(`🤖 Found ${emails.length} emails to analyze for user ${user.email} (inbound, outbound, and conversations)`);
 
       for (const email of emails) {
-        await this.processSingleEmail(user.id, email);
+        await this.processSingleEmail(user.id, email, userGmailService);
       }
       
     } catch (error) {
@@ -150,7 +160,7 @@ export class EmailProcessingJob {
     }
   }
 
-  private async processSingleEmail(userId: string, email: EmailMessage): Promise<void> {
+  private async processSingleEmail(userId: string, email: EmailMessage, userGmailService?: any): Promise<void> {
     try {
       // Check if email already exists
       const existing = await this.emailRepository.findByGmailMessageId(email.id);

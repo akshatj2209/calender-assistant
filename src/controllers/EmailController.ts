@@ -244,6 +244,14 @@ export class EmailController {
     try {
       const { userId, limit = '10' } = req.query as Record<string, string>;
       
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: 'User ID is required'
+        });
+        return;
+      }
+      
       const emails = await emailRepository.findPendingEmails(
         userId, 
         parseInt(limit)
@@ -268,6 +276,14 @@ export class EmailController {
   async getFailedEmails(req: Request, res: Response): Promise<void> {
     try {
       const { userId, limit = '10' } = req.query as Record<string, string>;
+      
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: 'User ID is required'
+        });
+        return;
+      }
       
       const emails = await emailRepository.findFailedEmails(
         userId, 
@@ -299,6 +315,14 @@ export class EmailController {
         endDate,
         limit = '20'
       } = req.query as Record<string, string>;
+      
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: 'User ID is required'
+        });
+        return;
+      }
       
       const options = {
         responded: responded === 'true' ? true : responded === 'false' ? false : undefined,

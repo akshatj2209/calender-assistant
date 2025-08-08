@@ -20,12 +20,37 @@ export interface EmailSendOptions {
 
 export class GmailService {
   private gmail: any;
+  private userSpecificAuth: any = null;
 
   constructor() {
     this.gmail = null;
   }
 
+  // Set user-specific tokens
+  setUserTokens(accessToken: string, refreshToken: string): void {
+    const { OAuth2 } = google.auth;
+    this.userSpecificAuth = new OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    
+    this.userSpecificAuth.setCredentials({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    
+    // Initialize Gmail client with user-specific auth
+    this.gmail = google.gmail({ version: 'v1', auth: this.userSpecificAuth });
+  }
+
   private async ensureAuthenticated(): Promise<void> {
+    // If we have user-specific authentication, use it
+    if (this.userSpecificAuth && this.gmail) {
+      return;
+    }
+    
+    // Fall back to global auth service for backward compatibility
     const isValid = await authService.ensureValidToken();
     if (!isValid) {
       throw new Error('Gmail API requires authentication. Please authenticate first.');

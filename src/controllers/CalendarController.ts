@@ -3,7 +3,6 @@ import { calendarRepository } from '@/database/repositories';
 import { CalendarEventStatus, AttendeeResponse } from '@prisma/client';
 import { z } from 'zod';
 
-// Validation schemas
 const createEventSchema = z.object({
   userId: z.string(),
   emailRecordId: z.string().optional(),
@@ -47,8 +46,7 @@ const eventSearchSchema = z.object({
 });
 
 export class CalendarController {
-  
-  // GET /api/calendar-events/:id
+
   async getEvent(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -76,7 +74,6 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events/google/:googleEventId
   async getEventByGoogleId(req: Request, res: Response): Promise<void> {
     try {
       const { googleEventId } = req.params;
@@ -105,7 +102,6 @@ export class CalendarController {
     }
   }
 
-  // POST /api/calendar-events
   async createEvent(req: Request, res: Response): Promise<void> {
     try {
       const validation = createEventSchema.safeParse(req.body);
@@ -141,7 +137,6 @@ export class CalendarController {
     }
   }
 
-  // PUT /api/calendar-events/:id
   async updateEvent(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -156,7 +151,7 @@ export class CalendarController {
         return;
       }
 
-      const updateData = { ...validation.data };
+      const updateData: any = { ...validation.data };
       if (validation.data.startTime) {
         updateData.startTime = new Date(validation.data.startTime);
       }
@@ -181,7 +176,6 @@ export class CalendarController {
     }
   }
 
-  // DELETE /api/calendar-events/:id
   async deleteEvent(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -202,7 +196,6 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events
   async searchEvents(req: Request, res: Response): Promise<void> {
     try {
       const queryData = {
@@ -247,10 +240,17 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events/upcoming
   async getUpcomingEvents(req: Request, res: Response): Promise<void> {
     try {
       const { userId, days = '7' } = req.query as Record<string, string>;
+      
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: 'User ID is required'
+        });
+        return;
+      }
       
       const events = await calendarRepository.findUpcomingEvents(
         userId, 
@@ -273,7 +273,6 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events/demo-events
   async getDemoEvents(req: Request, res: Response): Promise<void> {
     try {
       const { 
@@ -283,6 +282,14 @@ export class CalendarController {
         endDate,
         limit = '20'
       } = req.query as Record<string, string>;
+      
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: 'User ID is required'
+        });
+        return;
+      }
       
       const options = {
         startDate: startDate ? new Date(startDate) : undefined,
@@ -309,7 +316,6 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events/attendee/:email
   async getEventsByAttendee(req: Request, res: Response): Promise<void> {
     try {
       const { email } = req.params;
@@ -340,7 +346,6 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events/time-range
   async getEventsInTimeRange(req: Request, res: Response): Promise<void> {
     try {
       const { userId, startTime, endTime } = req.query as Record<string, string>;
@@ -375,7 +380,6 @@ export class CalendarController {
     }
   }
 
-  // POST /api/calendar-events/:id/update-response
   async updateAttendeeResponse(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -407,7 +411,6 @@ export class CalendarController {
     }
   }
 
-  // POST /api/calendar-events/:id/cancel
   async cancelEvent(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -429,7 +432,6 @@ export class CalendarController {
     }
   }
 
-  // POST /api/calendar-events/:id/confirm
   async confirmEvent(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
@@ -451,7 +453,6 @@ export class CalendarController {
     }
   }
 
-  // GET /api/calendar-events/stats
   async getCalendarStats(req: Request, res: Response): Promise<void> {
     try {
       const { userId, days = '30' } = req.query as Record<string, string>;
@@ -481,7 +482,6 @@ export class CalendarController {
     }
   }
 
-  // POST /api/calendar-events/upsert-google
   async upsertByGoogleEventId(req: Request, res: Response): Promise<void> {
     try {
       const validation = createEventSchema.safeParse(req.body);
@@ -521,7 +521,6 @@ export class CalendarController {
     }
   }
 
-  // DELETE /api/calendar-events/cleanup
   async cleanupOldEvents(req: Request, res: Response): Promise<void> {
     try {
       const { days = '365' } = req.query as Record<string, string>;
@@ -544,5 +543,4 @@ export class CalendarController {
   }
 }
 
-// Export singleton instance
 export const calendarController = new CalendarController();
