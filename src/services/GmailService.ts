@@ -15,6 +15,7 @@ export interface EmailSendOptions {
   subject: string;
   body: string;
   replyToMessageId?: string;
+  threadId?: string;
   isHtml?: boolean;
 }
 
@@ -183,7 +184,7 @@ export class GmailService {
   async sendEmail(options: EmailSendOptions): Promise<any> {
     await this.ensureAuthenticated();
 
-    const { to, subject, body, replyToMessageId, isHtml = false } = options;
+    const { to, subject, body, replyToMessageId, threadId, isHtml = false } = options;
 
     try {
       // Create email message in RFC 2822 format
@@ -213,12 +214,18 @@ export class GmailService {
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
+      const requestBody: any = {
+        raw: encodedEmail
+      };
+
+      // Only add threadId if we're replying to maintain conversation threading
+      if (threadId) {
+        requestBody.threadId = threadId;
+      }
+
       const response = await this.gmail.users.messages.send({
         userId: 'me',
-        requestBody: {
-          raw: encodedEmail,
-          threadId: replyToMessageId // If replying, maintain thread
-        }
+        requestBody
       });
 
       console.log('Gmail: Email sent successfully:', response.data.id);
@@ -233,7 +240,8 @@ export class GmailService {
     recipientEmail: string, 
     recipientName: string,
     proposedTimes: Date[],
-    originalMessageId?: string
+    originalMessageId?: string,
+    originalThreadId?: string
   ): Promise<any> {
     const timeFormatter = new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
@@ -269,7 +277,8 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
       to: recipientEmail,
       subject,
       body,
-      replyToMessageId: originalMessageId
+      replyToMessageId: originalMessageId,
+      threadId: originalThreadId
     });
   }
 

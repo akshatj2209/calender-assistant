@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { emailRepository } from '@/database/repositories';
 import { ProcessingStatus } from '@prisma/client';
 import { z } from 'zod';
+import { emailProcessingJob } from '@/jobs/EmailProcessingJob';
+import { responseSenderJob } from '@/jobs/ResponseSenderJob';
 
 // Validation schemas
 const createEmailSchema = z.object({
@@ -545,6 +547,96 @@ export class EmailController {
       res.status(500).json({
         success: false,
         error: 'Failed to cleanup old emails',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // POST /api/emails/jobs/trigger-processing
+  async triggerEmailProcessing(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('🤖 API: Triggering email processing job manually...');
+      
+      // Trigger the email processing job
+      await emailProcessingJob.triggerProcessing();
+      
+      // Get job status for response
+      const status = emailProcessingJob.getStatus();
+      
+      res.json({
+        success: true,
+        message: 'Email processing job triggered successfully',
+        status: {
+          isRunning: status.isRunning,
+          isStarted: status.isStarted,
+          triggeredAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('EmailController.triggerEmailProcessing:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to trigger email processing job',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // POST /api/emails/jobs/trigger-response-sending
+  async triggerResponseSending(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('📤 API: Triggering response sending job manually...');
+      
+      // Trigger the response sending job
+      await responseSenderJob.triggerSending();
+      
+      // Get job status for response
+      const status = responseSenderJob.getStatus();
+      
+      res.json({
+        success: true,
+        message: 'Response sending job triggered successfully',
+        status: {
+          isRunning: status.isRunning,
+          isStarted: status.isStarted,
+          triggeredAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('EmailController.triggerResponseSending:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to trigger response sending job',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // GET /api/emails/jobs/status
+  async getJobStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const emailProcessingStatus = emailProcessingJob.getStatus();
+      const responseSendingStatus = responseSenderJob.getStatus();
+      
+      res.json({
+        success: true,
+        jobs: {
+          emailProcessing: {
+            ...emailProcessingStatus,
+            description: 'Fetches emails from Gmail and processes demo requests'
+          },
+          responseSending: {
+            ...responseSendingStatus,
+            description: 'Sends scheduled responses to demo requests'
+          }
+        },
+        lastChecked: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('EmailController.getJobStatus:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get job status',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
     }

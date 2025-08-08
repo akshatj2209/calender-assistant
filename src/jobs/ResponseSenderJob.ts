@@ -89,7 +89,8 @@ export class ResponseSenderJob {
         to: response.recipientEmail,
         subject: response.subject,
         body: response.body,
-        replyToMessageId: response.emailRecord?.gmailMessageId
+        replyToMessageId: response.emailRecord?.gmailMessageId,
+        threadId: response.emailRecord?.gmailThreadId
       });
 
       // Mark as sent
