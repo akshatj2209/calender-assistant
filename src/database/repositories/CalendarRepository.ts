@@ -1,4 +1,4 @@
-import { CalendarEventRecord, CalendarEventStatus, AttendeeResponse, Prisma } from '@prisma/client';
+import { CalendarEventRecord, CalendarEventStatus, Prisma } from '@prisma/client';
 import { BaseRepository } from './BaseRepository';
 
 export interface CreateCalendarEventData {
@@ -14,8 +14,6 @@ export interface CreateCalendarEventData {
   location?: string;
   attendeeEmail: string;
   attendeeName?: string;
-  isDemo?: boolean;
-  meetingType?: string;
 }
 
 export interface UpdateCalendarEventData {
@@ -26,7 +24,6 @@ export interface UpdateCalendarEventData {
   timezone?: string;
   location?: string;
   status?: CalendarEventStatus;
-  attendeeResponse?: AttendeeResponse;
 }
 
 export interface CalendarEventSearchOptions {
@@ -34,7 +31,6 @@ export interface CalendarEventSearchOptions {
   emailRecordId?: string;
   attendeeEmail?: string;
   status?: CalendarEventStatus;
-  isDemo?: boolean;
   startDate?: Date;
   endDate?: Date;
   page?: number;
@@ -49,8 +45,7 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     return this.prisma.calendarEventRecord.create({
       data: {
         ...data,
-        calendarId: data.calendarId || 'primary',
-        isDemo: data.isDemo || false
+        calendarId: data.calendarId || 'primary'
       }
     });
   }
@@ -134,7 +129,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     if (options?.emailRecordId) where.emailRecordId = options.emailRecordId;
     if (options?.attendeeEmail) where.attendeeEmail = options.attendeeEmail;
     if (options?.status) where.status = options.status;
-    if (options?.isDemo !== undefined) where.isDemo = options.isDemo;
 
     if (options?.startDate || options?.endDate) {
       where.startTime = this.getDateRangeFilter(options.startDate, options.endDate);
@@ -181,15 +175,30 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     status?: CalendarEventStatus;
     limit?: number;
   }): Promise<CalendarEventRecord[]> {
-    return this.findMany({
-      userId,
-      isDemo: true,
-      startDate: options?.startDate,
-      endDate: options?.endDate,
-      status: options?.status,
-      limit: options?.limit,
-      sortBy: 'startTime',
-      sortOrder: 'desc'
+    // Demo events are identified by their relationship to email records that are demo requests
+    return this.prisma.calendarEventRecord.findMany({
+      where: {
+        userId,
+        startTime: options?.startDate ? { gte: options.startDate } : undefined,
+        endTime: options?.endDate ? { lte: options.endDate } : undefined,
+        status: options?.status,
+        emailRecord: {
+          isDemoRequest: true
+        }
+      },
+      include: {
+        emailRecord: true,
+        user: {
+          select: {
+            email: true,
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        startTime: 'desc'
+      },
+      take: options?.limit
     });
   }
 
@@ -244,11 +253,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     });
   }
 
-  async updateAttendeeResponse(id: string, response: AttendeeResponse): Promise<CalendarEventRecord> {
-    return this.update(id, {
-      attendeeResponse: response
-    });
-  }
 
   async markEventCancelled(id: string): Promise<CalendarEventRecord> {
     return this.update(id, {
@@ -269,18 +273,12 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     confirmedEvents: number;
     cancelledEvents: number;
     upcomingEvents: number;
-    attendeeResponses: {
-      accepted: number;
-      declined: number;
-      tentative: number;
-      needsAction: number;
-    };
   }> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     const now = new Date();
 
-    const [totalStats, demoStats, statusStats, upcomingStats, responseStats] = await Promise.all([
+    const [totalStats, demoStats, statusStats, upcomingStats] = await Promise.all([
       this.prisma.calendarEventRecord.aggregate({
         where: {
           userId,
@@ -288,10 +286,13 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
         },
         _count: { id: true }
       }),
+      // Get demo events count by checking related email records
       this.prisma.calendarEventRecord.aggregate({
         where: {
           userId,
-          isDemo: true,
+          emailRecord: {
+            isDemoRequest: true
+          },
           createdAt: { gte: startDate }
         },
         _count: { id: true }
@@ -310,58 +311,28 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
           startTime: { gte: now }
         },
         _count: { id: true }
-      }),
-      this.prisma.calendarEventRecord.groupBy({
-        by: ['attendeeResponse'],
-        where: {
-          userId,
-          createdAt: { gte: startDate }
-        },
-        _count: { id: true }
       })
     ]);
 
     const result = {
       totalEvents: totalStats._count.id || 0,
-      demoEvents: demoStats._count.id || 0,
+      demoEvents: demoStats?._count?.id || 0,
       confirmedEvents: 0,
       cancelledEvents: 0,
-      upcomingEvents: upcomingStats._count.id || 0,
-      attendeeResponses: {
-        accepted: 0,
-        declined: 0,
-        tentative: 0,
-        needsAction: 0
-      }
+      upcomingEvents: upcomingStats._count.id || 0
     };
 
     statusStats.forEach(stat => {
       switch (stat.status) {
         case CalendarEventStatus.CONFIRMED:
-          result.confirmedEvents = stat._count.id;
+          result.confirmedEvents = stat._count?.id || 0;
           break;
         case CalendarEventStatus.CANCELLED:
-          result.cancelledEvents = stat._count.id;
+          result.cancelledEvents = stat._count?.id || 0;
           break;
       }
     });
 
-    responseStats.forEach(stat => {
-      switch (stat.attendeeResponse) {
-        case AttendeeResponse.ACCEPTED:
-          result.attendeeResponses.accepted = stat._count.id;
-          break;
-        case AttendeeResponse.DECLINED:
-          result.attendeeResponses.declined = stat._count.id;
-          break;
-        case AttendeeResponse.TENTATIVE:
-          result.attendeeResponses.tentative = stat._count.id;
-          break;
-        case AttendeeResponse.NEEDS_ACTION:
-          result.attendeeResponses.needsAction = stat._count.id;
-          break;
-      }
-    });
 
     return result;
   }

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { calendarRepository } from '@/database/repositories';
-import { CalendarEventStatus, AttendeeResponse } from '@prisma/client';
+import { CalendarEventStatus } from '@prisma/client';
 import { z } from 'zod';
 
 const createEventSchema = z.object({
@@ -9,26 +9,20 @@ const createEventSchema = z.object({
   googleEventId: z.string(),
   calendarId: z.string().optional(),
   summary: z.string(),
-  description: z.string().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   timezone: z.string(),
-  location: z.string().optional(),
   attendeeEmail: z.string().email(),
-  attendeeName: z.string().optional(),
-  isDemo: z.boolean().optional(),
-  meetingType: z.string().optional()
+  attendeeName: z.string().optional()
 });
 
 const updateEventSchema = z.object({
   summary: z.string().optional(),
-  description: z.string().optional(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
   timezone: z.string().optional(),
-  location: z.string().optional(),
   status: z.nativeEnum(CalendarEventStatus).optional(),
-  attendeeResponse: z.nativeEnum(AttendeeResponse).optional()
+  attendeeName: z.string().optional()
 });
 
 const eventSearchSchema = z.object({
@@ -36,7 +30,6 @@ const eventSearchSchema = z.object({
   emailRecordId: z.string().optional(),
   attendeeEmail: z.string().email().optional(),
   status: z.nativeEnum(CalendarEventStatus).optional(),
-  isDemo: z.boolean().optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   page: z.number().min(1).optional(),
@@ -273,143 +266,7 @@ export class CalendarController {
     }
   }
 
-  async getDemoEvents(req: Request, res: Response): Promise<void> {
-    try {
-      const { 
-        userId, 
-        status,
-        startDate,
-        endDate,
-        limit = '20'
-      } = req.query as Record<string, string>;
-      
-      if (!userId) {
-        res.status(400).json({
-          success: false,
-          error: 'User ID is required'
-        });
-        return;
-      }
-      
-      const options = {
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        status: status as CalendarEventStatus,
-        limit: parseInt(limit)
-      };
 
-      const events = await calendarRepository.findDemoEvents(userId, options);
-
-      res.json({
-        success: true,
-        events,
-        count: events.length,
-        filters: options
-      });
-    } catch (error) {
-      console.error('CalendarController.getDemoEvents:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get demo events',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  async getEventsByAttendee(req: Request, res: Response): Promise<void> {
-    try {
-      const { email } = req.params;
-      const { startDate, endDate, limit = '20' } = req.query as Record<string, string>;
-      
-      const options = {
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        limit: parseInt(limit)
-      };
-
-      const events = await calendarRepository.findEventsByAttendee(email, options);
-
-      res.json({
-        success: true,
-        events,
-        count: events.length,
-        attendee: email,
-        filters: options
-      });
-    } catch (error) {
-      console.error('CalendarController.getEventsByAttendee:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get events by attendee',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  async getEventsInTimeRange(req: Request, res: Response): Promise<void> {
-    try {
-      const { userId, startTime, endTime } = req.query as Record<string, string>;
-      
-      if (!userId || !startTime || !endTime) {
-        res.status(400).json({
-          success: false,
-          error: 'userId, startTime, and endTime are required'
-        });
-        return;
-      }
-
-      const events = await calendarRepository.findEventsInTimeRange(
-        userId,
-        new Date(startTime),
-        new Date(endTime)
-      );
-
-      res.json({
-        success: true,
-        events,
-        count: events.length,
-        timeRange: { startTime, endTime }
-      });
-    } catch (error) {
-      console.error('CalendarController.getEventsInTimeRange:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get events in time range',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  async updateAttendeeResponse(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const { response } = req.body;
-
-      if (!Object.values(AttendeeResponse).includes(response)) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid attendee response',
-          validValues: Object.values(AttendeeResponse)
-        });
-        return;
-      }
-
-      const event = await calendarRepository.updateAttendeeResponse(id, response);
-
-      res.json({
-        success: true,
-        event,
-        message: 'Attendee response updated successfully'
-      });
-    } catch (error) {
-      console.error('CalendarController.updateAttendeeResponse:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to update attendee response',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
 
   async cancelEvent(req: Request, res: Response): Promise<void> {
     try {
@@ -482,65 +339,6 @@ export class CalendarController {
     }
   }
 
-  async upsertByGoogleEventId(req: Request, res: Response): Promise<void> {
-    try {
-      const validation = createEventSchema.safeParse(req.body);
-      if (!validation.success) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid input',
-          details: validation.error.errors
-        });
-        return;
-      }
-
-      const data = {
-        ...validation.data,
-        startTime: new Date(validation.data.startTime),
-        endTime: new Date(validation.data.endTime)
-      };
-
-      const event = await calendarRepository.upsertByGoogleEventId(
-        data.googleEventId,
-        data.calendarId || 'primary',
-        data
-      );
-
-      res.json({
-        success: true,
-        event,
-        message: 'Calendar event upserted successfully'
-      });
-    } catch (error) {
-      console.error('CalendarController.upsertByGoogleEventId:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to upsert calendar event',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  async cleanupOldEvents(req: Request, res: Response): Promise<void> {
-    try {
-      const { days = '365' } = req.query as Record<string, string>;
-      
-      const deletedCount = await calendarRepository.cleanupOldEvents(parseInt(days));
-
-      res.json({
-        success: true,
-        deletedCount,
-        message: `Cleaned up ${deletedCount} old events`
-      });
-    } catch (error) {
-      console.error('CalendarController.cleanupOldEvents:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to cleanup old events',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
 }
 
 export const calendarController = new CalendarController();

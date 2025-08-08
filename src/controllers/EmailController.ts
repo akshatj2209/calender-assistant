@@ -355,12 +355,7 @@ export class EmailController {
       const { id } = req.params;
       const { isDemoRequest, intentAnalysis, timePreferences, contactInfo } = req.body;
 
-      const email = await emailRepository.markAsProcessed(id, {
-        isDemoRequest,
-        intentAnalysis,
-        timePreferences,
-        contactInfo
-      });
+      const email = await emailRepository.markAsProcessed(id, isDemoRequest);
 
       res.json({
         success: true,
@@ -391,7 +386,7 @@ export class EmailController {
         return;
       }
 
-      const email = await emailRepository.markAsFailed(id, errorMessage, incrementRetry);
+      const email = await emailRepository.markAsFailed(id);
 
       res.json({
         success: true,
@@ -444,7 +439,7 @@ export class EmailController {
     try {
       const { maxRetries = '3' } = req.query as Record<string, string>;
       
-      const emails = await emailRepository.getEmailsForRetry(parseInt(maxRetries));
+      const emails = await emailRepository.findFailedEmails();
 
       res.json({
         success: true,

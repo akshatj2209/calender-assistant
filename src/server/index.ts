@@ -5,16 +5,12 @@ import { config, serverPort, corsOrigins, isDevelopment } from '@/utils/config';
 import { authService } from '@/services/AuthService';
 import prisma from '@/database/connection';
 import authRoutes from './routes/auth';
-import gmailRoutes from './routes/gmail';
 import calendarRoutes from './routes/calendar';
-import configRoutes from './routes/config';
-import statusRoutes from './routes/status';
 // Database-backed routes
 import usersRoutes from './routes/users';
 import emailsRoutes from './routes/emails';
 import calendarEventsRoutes from './routes/calendar-events';
 import scheduledResponsesRoutes from './routes/scheduled-responses';
-import jobsRoutes from './routes/jobs';
 
 const app = express();
 
@@ -55,17 +51,13 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
-app.use('/api/gmail', gmailRoutes);
 app.use('/api/calendar', calendarRoutes);
-app.use('/api/config', configRoutes);
-app.use('/api/status', statusRoutes);
 
 // Database-backed routes
 app.use('/api/users', usersRoutes);
 app.use('/api/emails', emailsRoutes);
 app.use('/api/calendar-events', calendarEventsRoutes);
 app.use('/api/scheduled-responses', scheduledResponsesRoutes);
-app.use('/api/jobs', jobsRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -75,15 +67,11 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/health',
       auth: '/api/auth',
-      gmail: '/api/gmail',
       calendar: '/api/calendar',
-      config: '/api/config',
-      status: '/api/status',
       users: '/api/users',
       emails: '/api/emails',
       calendarEvents: '/api/calendar-events',
-      scheduledResponses: '/api/scheduled-responses',
-      jobs: '/api/jobs'
+      scheduledResponses: '/api/scheduled-responses'
     }
   });
 });
@@ -96,10 +84,11 @@ app.use('*', (req, res) => {
     availableEndpoints: [
       '/health',
       '/api/auth',
-      '/api/gmail',
       '/api/calendar',
-      '/api/config',
-      '/api/status'
+      '/api/users',
+      '/api/emails',
+      '/api/calendar-events',
+      '/api/scheduled-responses'
     ]
   });
 });
@@ -158,10 +147,9 @@ async function startServer() {
     // Start HTTP server
     app.listen(serverPort, () => {
       console.log(`🌐 Server running on http://localhost:${serverPort}`);
-      console.log(`📧 Gmail API: ${config.email.salesEmail}`);
-      console.log(`🏢 Company: ${config.email.companyName}`);
-      console.log(`⏰ Business Hours: ${config.businessRules.businessHours.start} - ${config.businessRules.businessHours.end}`);
+      console.log(`⏰ Default Business Hours: ${config.businessRules.businessHours.start} - ${config.businessRules.businessHours.end}`);
       console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📝 Note: User-specific business config now stored in database`);
       
       if (isDevelopment) {
         console.log('\n📋 Available endpoints:');

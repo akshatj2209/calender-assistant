@@ -1,19 +1,38 @@
-import { User, GoogleTokens, UserConfig, Prisma } from '@prisma/client';
+import { User, GoogleTokens, Prisma } from '@prisma/client';
 import { BaseRepository } from './BaseRepository';
 
 export interface CreateUserData {
   email: string;
   name?: string;
+  salesName?: string;
+  salesEmail?: string;
+  companyName?: string;
+  emailSignature?: string;
+  businessHoursStart?: string;
+  businessHoursEnd?: string;
+  workingDays?: number[];
+  timezone?: string;
+  meetingDuration?: number;
+  bufferTime?: number;
 }
 
 export interface UpdateUserData {
   name?: string;
   email?: string;
+  salesName?: string;
+  salesEmail?: string;
+  companyName?: string;
+  emailSignature?: string;
+  businessHoursStart?: string;
+  businessHoursEnd?: string;
+  workingDays?: number[];
+  timezone?: string;
+  meetingDuration?: number;
+  bufferTime?: number;
 }
 
 export interface UserWithTokens extends User {
   googleTokens?: GoogleTokens | null;
-  userConfig?: UserConfig | null;
 }
 
 export class UserRepository extends BaseRepository<User> {
@@ -22,13 +41,7 @@ export class UserRepository extends BaseRepository<User> {
     return this.prisma.user.create({
       data: {
         email: data.email,
-        name: data.name,
-        userConfig: {
-          create: {} // Create default config
-        }
-      },
-      include: {
-        userConfig: true
+        name: data.name
       }
     });
   }
@@ -37,8 +50,7 @@ export class UserRepository extends BaseRepository<User> {
     return this.prisma.user.findUnique({
       where: { id },
       include: {
-        googleTokens: true,
-        userConfig: true
+        googleTokens: true
       }
     });
   }
@@ -47,8 +59,7 @@ export class UserRepository extends BaseRepository<User> {
     return this.prisma.user.findUnique({
       where: { email },
       include: {
-        googleTokens: true,
-        userConfig: true
+        googleTokens: true
       }
     });
   }
@@ -75,8 +86,7 @@ export class UserRepository extends BaseRepository<User> {
     const queryOptions: Prisma.UserFindManyArgs = {
       where,
       include: {
-        googleTokens: true,
-        userConfig: true
+        googleTokens: true
       }
     };
 
@@ -128,36 +138,15 @@ export class UserRepository extends BaseRepository<User> {
     });
   }
 
-  // User Configuration management
-  async getUserConfig(userId: string): Promise<UserConfig | null> {
-    return this.prisma.userConfig.findUnique({
-      where: { userId }
-    });
-  }
-
-  async updateUserConfig(userId: string, config: Partial<UserConfig>): Promise<UserConfig> {
-    return this.prisma.userConfig.upsert({
-      where: { userId },
-      create: {
-        userId,
-        ...config
-      },
-      update: config
-    });
-  }
-
-  // Get user statistics
+  // Get user statistics (simplified)
   async getUserStats(userId: string, days: number = 30): Promise<{
     totalEmails: number;
-    processedEmails: number;
-    demoRequests: number;
-    responsesSent: number;
     eventsCreated: number;
   }> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const [emailStats, eventStats, metrics] = await Promise.all([
+    const [emailStats, eventStats] = await Promise.all([
       this.prisma.emailRecord.aggregate({
         where: {
           userId,
@@ -175,26 +164,11 @@ export class UserRepository extends BaseRepository<User> {
         _count: {
           id: true
         }
-      }),
-      this.prisma.processingMetrics.aggregate({
-        where: {
-          userId,
-          date: { gte: startDate }
-        },
-        _sum: {
-          emailsProcessed: true,
-          demoRequestsDetected: true,
-          responsesSent: true,
-          eventsCreated: true
-        }
       })
     ]);
 
     return {
       totalEmails: emailStats._count.id || 0,
-      processedEmails: metrics._sum.emailsProcessed || 0,
-      demoRequests: metrics._sum.demoRequestsDetected || 0,
-      responsesSent: metrics._sum.responsesSent || 0,
       eventsCreated: eventStats._count.id || 0
     };
   }

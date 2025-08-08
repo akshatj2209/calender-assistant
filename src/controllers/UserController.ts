@@ -1,34 +1,36 @@
 import { Request, Response } from 'express';
 import { userRepository } from '@/database/repositories';
+import { userConfigService } from '@/services/UserConfigService';
 import { z } from 'zod';
 
 // Validation schemas
 const createUserSchema = z.object({
   email: z.string().email(),
-  name: z.string().optional()
-});
-
-const updateUserSchema = z.object({
   name: z.string().optional(),
-  email: z.string().email().optional()
-});
-
-const updateConfigSchema = z.object({
+  salesName: z.string().optional(),
+  salesEmail: z.string().email().optional(), 
+  companyName: z.string().optional(),
+  emailSignature: z.string().optional(),
   businessHoursStart: z.string().optional(),
   businessHoursEnd: z.string().optional(),
   workingDays: z.array(z.number().min(0).max(6)).optional(),
   timezone: z.string().optional(),
   meetingDuration: z.number().min(15).max(240).optional(),
-  bufferTime: z.number().min(0).max(240).optional(),
-  travelBufferTime: z.number().min(0).max(240).optional(),
-  maxLookaheadDays: z.number().min(1).max(30).optional(),
-  minAdvanceNotice: z.number().min(1).max(48).optional(),
+  bufferTime: z.number().min(0).max(60).optional()
+});
+
+const updateUserSchema = z.object({
+  name: z.string().optional(),
   salesName: z.string().optional(),
-  companyName: z.string().optional(),
+  salesEmail: z.string().email().optional(),
+  companyName: z.string().optional(), 
   emailSignature: z.string().optional(),
-  autoRespond: z.boolean().optional(),
-  checkIntervalMinutes: z.number().min(1).max(60).optional(),
-  maxEmailsPerCheck: z.number().min(1).max(100).optional()
+  businessHoursStart: z.string().optional(),
+  businessHoursEnd: z.string().optional(),
+  workingDays: z.array(z.number().min(0).max(6)).optional(),
+  timezone: z.string().optional(),
+  meetingDuration: z.number().min(15).max(240).optional(),
+  bufferTime: z.number().min(0).max(60).optional()
 });
 
 export class UserController {
@@ -205,7 +207,7 @@ export class UserController {
     try {
       const { id } = req.params;
       
-      const config = await userRepository.getUserConfig(id);
+      const config = await userConfigService.getUserConfig(id);
       if (!config) {
         res.status(404).json({
           success: false,
@@ -233,7 +235,7 @@ export class UserController {
     try {
       const { id } = req.params;
       
-      const validation = updateConfigSchema.safeParse(req.body);
+      const validation = updateUserSchema.safeParse(req.body);
       if (!validation.success) {
         res.status(400).json({
           success: false,
@@ -243,7 +245,7 @@ export class UserController {
         return;
       }
 
-      const config = await userRepository.updateUserConfig(id, validation.data);
+      const config = await userConfigService.updateUserConfig(id, validation.data);
 
       res.json({
         success: true,

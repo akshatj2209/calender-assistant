@@ -229,14 +229,7 @@ export class EmailProcessingJob {
       // Only process INBOUND emails for demo requests (outbound emails are just logged)
       if (!isInboundEmail) {
         console.log(`🤖 Outbound email logged: ${email.subject}`);
-        await this.emailRepository.markAsProcessed(emailRecord.id, {
-          isDemoRequest: false,
-          intentAnalysis: {
-            isDemoRequest: false,
-            confidence: 0,
-            reasoning: "Outbound email - not processed for demo requests"
-          }
-        });
+        await this.emailRepository.markAsProcessed(emailRecord.id, false);
         return;
       }
 
@@ -254,10 +247,7 @@ export class EmailProcessingJob {
       
       if (!intentAnalysis.isDemoRequest) {
         console.log(`🤖 Email is not a demo request: ${email.subject}`);
-        await this.emailRepository.markAsProcessed(emailRecord.id, {
-          isDemoRequest: false,
-          intentAnalysis
-        });
+        await this.emailRepository.markAsProcessed(emailRecord.id, false);
         return;
       }
 
@@ -276,7 +266,7 @@ export class EmailProcessingJob {
 
       if (timeSlots.length === 0) {
         console.log(`🤖 No available time slots found for: ${email.subject}`);
-        await this.emailRepository.markAsFailed(emailRecord.id, 'No available time slots');
+        await this.emailRepository.markAsFailed(emailRecord.id);
         return;
       }
 
@@ -304,12 +294,7 @@ export class EmailProcessingJob {
       console.log(`🤖 ✅ Scheduled response created with ID: ${createdResponse.id}`);
 
       // 7. Mark email as processed
-      await this.emailRepository.markAsProcessed(emailRecord.id, {
-        isDemoRequest: true,
-        intentAnalysis,
-        timePreferences,
-        contactInfo
-      });
+      await this.emailRepository.markAsProcessed(emailRecord.id, true);
 
       console.log(`🤖 Successfully processed email: ${email.subject}`);
       
@@ -321,7 +306,7 @@ export class EmailProcessingJob {
         // Try to find the email record to mark as failed
         const existing = await this.emailRepository.findByGmailMessageId(email.id);
         if (existing) {
-          await this.emailRepository.markAsFailed(existing.id, errorMessage);
+          await this.emailRepository.markAsFailed(existing.id);
         }
       } catch (markFailedError) {
         console.error('🤖 Error marking email as failed:', markFailedError);

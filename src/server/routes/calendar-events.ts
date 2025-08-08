@@ -3,51 +3,23 @@ import { calendarController } from '@/controllers/CalendarController';
 
 const router = express.Router();
 
-// IMPORTANT: Specific routes must come BEFORE parameterized routes
-// Otherwise /:id will match everything
-
-// Get upcoming events
-router.get('/upcoming', calendarController.getUpcomingEvents.bind(calendarController));
-
-// Get demo events
-router.get('/demo-events', calendarController.getDemoEvents.bind(calendarController));
-
-// Get events by attendee email
-router.get('/attendee/:email', calendarController.getEventsByAttendee.bind(calendarController));
-
-// Get events in time range
-router.get('/time-range', calendarController.getEventsInTimeRange.bind(calendarController));
-
-// Calendar statistics
+// Calendar statistics (used by frontend)
 router.get('/stats', calendarController.getCalendarStats.bind(calendarController));
 
-// Get event by Google event ID
-router.get('/google/:googleEventId', calendarController.getEventByGoogleId.bind(calendarController));
+// Upcoming events
+router.get('/upcoming', calendarController.getUpcomingEvents.bind(calendarController));
 
-// Search events with filters (must be before /:id)
-router.get('/', calendarController.searchEvents.bind(calendarController));
-
-// Create new event
+// CRUD operations for calendar events
+router.get('/:id', calendarController.getEvent.bind(calendarController));
 router.post('/', calendarController.createEvent.bind(calendarController));
+router.put('/:id', calendarController.updateEvent.bind(calendarController));
+router.delete('/:id', calendarController.deleteEvent.bind(calendarController));
 
-// Event status updates
-router.post('/:id/update-response', calendarController.updateAttendeeResponse.bind(calendarController));
+// Event management
 router.post('/:id/cancel', calendarController.cancelEvent.bind(calendarController));
 router.post('/:id/confirm', calendarController.confirmEvent.bind(calendarController));
 
-// Upsert event by Google event ID
-router.post('/upsert-google', calendarController.upsertByGoogleEventId.bind(calendarController));
-
-// Cleanup old events
-router.delete('/cleanup', calendarController.cleanupOldEvents.bind(calendarController));
-
-// Update event
-router.put('/:id', calendarController.updateEvent.bind(calendarController));
-
-// Delete event
-router.delete('/:id', calendarController.deleteEvent.bind(calendarController));
-
-// Get event by ID (MUST be last among GET routes)
-router.get('/:id', calendarController.getEvent.bind(calendarController));
+// Search events (must be after specific routes)
+router.get('/', calendarController.searchEvents.bind(calendarController));
 
 export default router;

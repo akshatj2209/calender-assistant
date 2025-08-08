@@ -59,7 +59,7 @@ export abstract class BaseRepository<T> {
 
   // Transaction helper
   async executeInTransaction<TResult>(
-    callback: (prisma: typeof this.prisma) => Promise<TResult>
+    callback: (prisma: any) => Promise<TResult>
   ): Promise<TResult> {
     return this.prisma.$transaction(callback);
   }

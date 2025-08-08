@@ -7,10 +7,7 @@ dotenv.config();
 const requiredEnvVars = [
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
-  'OPENAI_API_KEY',
-  'SALES_EMAIL',
-  'SALES_NAME',
-  'COMPANY_NAME'
+  'OPENAI_API_KEY'
 ] as const;
 
 const validateRequiredEnvVars = (): void => {
@@ -54,18 +51,6 @@ export const createAppConfig = (): AppConfig => {
       apiKey: process.env.OPENAI_API_KEY!,
       model: process.env.OPENAI_MODEL || 'gpt-4'
     },
-    email: {
-      salesEmail: process.env.SALES_EMAIL!,
-      salesName: process.env.SALES_NAME!,
-      companyName: process.env.COMPANY_NAME!,
-      signatureTemplate: process.env.EMAIL_SIGNATURE_TEMPLATE || `
-Best regards,
-{salesName} from {companyName}
-
-This email was sent automatically by our scheduling assistant. 
-If you have any questions, please reply to this email.
-      `.trim()
-    },
     monitoring: {
       checkIntervalMinutes: parseInt(process.env.CHECK_INTERVAL_MINUTES || '5'),
       maxEmailsPerCheck: parseInt(process.env.MAX_EMAILS_PER_CHECK || '10'),
@@ -104,11 +89,7 @@ export const validateConfig = (): { isValid: boolean; errors: string[] } => {
     errors.push('Meeting duration must be between 15 and 240 minutes');
   }
 
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(config.email.salesEmail)) {
-    errors.push('Sales email must be a valid email address');
-  }
+  // Email validation now handled per-user in the database
 
   // Validate OpenAI API key format
   if (!config.openai.apiKey.startsWith('sk-')) {

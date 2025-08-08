@@ -148,12 +148,6 @@ export interface AppConfig {
     apiKey: string;
     model: string;
   };
-  email: {
-    salesEmail: string;
-    salesName: string;
-    companyName: string;
-    signatureTemplate: string;
-  };
   monitoring: {
     checkIntervalMinutes: number;
     maxEmailsPerCheck: number;

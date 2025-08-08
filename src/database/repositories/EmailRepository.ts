@@ -10,48 +10,16 @@ export interface CreateEmailData {
   subject: string;
   body: string;
   receivedAt: Date;
-}
-
-export interface IntentAnalysis {
-  isDemoRequest: boolean;
-  confidence: number;
-  reasoning: string;
-  [key: string]: unknown;
-}
-
-export interface TimePreferences {
-  preferredDays?: string[];
-  preferredTimes?: string[];
-  timeRange?: 'morning' | 'afternoon' | 'evening' | 'flexible';
-  urgency?: 'low' | 'medium' | 'high';
-  [key: string]: unknown;
-}
-
-export interface ContactInfo {
-  name: string;
-  email: string;
-  company?: string;
-  [key: string]: unknown;
-}
-
-export interface EmailError {
-  message: string;
-  timestamp: string | Date;
-  retryAttempt: number;
-  [key: string]: unknown;
+  isDemoRequest?: boolean;
 }
 
 export interface UpdateEmailData {
   processingStatus?: ProcessingStatus;
+  processedAt?: Date;
   isDemoRequest?: boolean;
-  intentAnalysis?: Prisma.InputJsonValue;
-  timePreferences?: Prisma.InputJsonValue;
-  contactInfo?: Prisma.InputJsonValue;
   responseGenerated?: boolean;
   responseSent?: boolean;
   responseMessageId?: string;
-  errors?: Prisma.InputJsonValue[];
-  retryCount?: number;
 }
 
 export interface EmailSearchOptions {
@@ -197,39 +165,17 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
     });
   }
 
-  async markAsProcessed(id: string, result: {
-    isDemoRequest?: boolean;
-    intentAnalysis?: IntentAnalysis;
-    timePreferences?: TimePreferences;
-    contactInfo?: ContactInfo;
-  }): Promise<EmailRecord> {
+  async markAsProcessed(id: string, isDemoRequest?: boolean): Promise<EmailRecord> {
     return this.update(id, {
       processingStatus: ProcessingStatus.COMPLETED,
-      isDemoRequest: result.isDemoRequest,
-      intentAnalysis: result.intentAnalysis as Prisma.InputJsonValue,
-      timePreferences: result.timePreferences as Prisma.InputJsonValue,
-      contactInfo: result.contactInfo as Prisma.InputJsonValue
+      processedAt: new Date(),
+      ...(isDemoRequest !== undefined && { isDemoRequest })
     });
   }
 
-  async markAsFailed(id: string, error: string, incrementRetry: boolean = true): Promise<EmailRecord> {
-    const currentEmail = await this.findById(id);
-    if (!currentEmail) {
-      throw new Error(`Email with id ${id} not found`);
-    }
-
-    const existingErrors = (currentEmail.errors as Prisma.JsonArray) || [];
-    const newError = {
-      message: error,
-      timestamp: new Date().toISOString(),
-      retryAttempt: currentEmail.retryCount + (incrementRetry ? 1 : 0)
-    };
-    const errors = [...existingErrors, newError] as Prisma.InputJsonValue[];
-
+  async markAsFailed(id: string): Promise<EmailRecord> {
     return this.update(id, {
-      processingStatus: ProcessingStatus.FAILED,
-      errors,
-      ...(incrementRetry && { retryCount: currentEmail.retryCount + 1 })
+      processingStatus: ProcessingStatus.FAILED
     });
   }
 
@@ -241,21 +187,6 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
     });
   }
 
-  // Get emails that need retry (failed with retryCount < maxRetries)
-  async getEmailsForRetry(maxRetries: number = 3): Promise<EmailRecord[]> {
-    return this.prisma.emailRecord.findMany({
-      where: {
-        processingStatus: ProcessingStatus.FAILED,
-        retryCount: {
-          lt: maxRetries
-        }
-      },
-      orderBy: {
-        updatedAt: 'asc'
-      },
-      take: 10 // Limit retry batch size
-    });
-  }
 
   // Get statistics for a user
   async getEmailStats(userId: string, days: number = 30): Promise<{
