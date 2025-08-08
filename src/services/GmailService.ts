@@ -187,6 +187,23 @@ export class GmailService {
     const { to, subject, body, replyToMessageId, threadId, isHtml = false } = options;
 
     try {
+      // Get the original message if replying to extract proper Message-ID
+      let originalMessageId = replyToMessageId;
+      if (replyToMessageId && !replyToMessageId.includes('@')) {
+        // If we have a Gmail message ID, get the actual Message-ID header
+        try {
+          const originalMessage = await this.getMessage(replyToMessageId);
+          const messageIdHeader = originalMessage.payload?.headers?.find(
+            (h: any) => h.name.toLowerCase() === 'message-id'
+          );
+          if (messageIdHeader) {
+            originalMessageId = messageIdHeader.value;
+          }
+        } catch (error) {
+          console.warn('Gmail: Could not retrieve original message for proper threading:', error);
+        }
+      }
+
       // Create email message in RFC 2822 format
       const headers = [
         `To: ${to}`,
@@ -196,9 +213,9 @@ export class GmailService {
         'Content-Transfer-Encoding: base64'
       ];
 
-      if (replyToMessageId) {
-        headers.push(`In-Reply-To: ${replyToMessageId}`);
-        headers.push(`References: ${replyToMessageId}`);
+      if (originalMessageId) {
+        headers.push(`In-Reply-To: ${originalMessageId}`);
+        headers.push(`References: ${originalMessageId}`);
       }
 
       const email = [
@@ -229,7 +246,13 @@ export class GmailService {
       });
 
       console.log('Gmail: Email sent successfully:', response.data.id);
-      return response.data;
+      
+      // Return both the sent message data and the thread ID for tracking
+      return {
+        ...response.data,
+        threadId: response.data.threadId || threadId,
+        originalMessageId: replyToMessageId
+      };
     } catch (error) {
       console.error('Gmail: Failed to send email:', error);
       throw new Error(`Failed to send email: ${error}`);
@@ -354,6 +377,53 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
     } catch (error) {
       console.error('Gmail: Failed to get labels:', error);
       throw new Error('Failed to retrieve Gmail labels');
+    }
+  }
+
+  // Get thread messages to track email conversations
+  async getThreadMessages(threadId: string): Promise<any[]> {
+    await this.ensureAuthenticated();
+    
+    try {
+      const response = await this.gmail.users.threads.get({
+        userId: 'me',
+        id: threadId,
+        format: 'full'
+      });
+      
+      return response.data.messages || [];
+    } catch (error) {
+      console.error(`Gmail: Failed to get thread messages for ${threadId}:`, error);
+      throw new Error(`Failed to retrieve thread messages: ${threadId}`);
+    }
+  }
+
+  // Search for replies to a specific message by thread ID
+  async searchRepliesInThread(threadId: string, afterMessageId: string): Promise<EmailMessage[]> {
+    try {
+      const threadMessages = await this.getThreadMessages(threadId);
+      
+      // Find the index of the original message
+      let originalMessageIndex = -1;
+      for (let i = 0; i < threadMessages.length; i++) {
+        if (threadMessages[i].id === afterMessageId) {
+          originalMessageIndex = i;
+          break;
+        }
+      }
+      
+      if (originalMessageIndex === -1) {
+        return [];
+      }
+      
+      // Get messages that came after the original message
+      const replyMessages = threadMessages.slice(originalMessageIndex + 1);
+      
+      // Convert to EmailMessage format
+      return replyMessages.map(msg => EmailMessageModel.fromGmailMessage(msg));
+    } catch (error) {
+      console.error('Gmail: Failed to search replies in thread:', error);
+      return [];
     }
   }
 

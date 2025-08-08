@@ -5,6 +5,7 @@ export interface CreateEmailData {
   userId: string;
   gmailMessageId: string;
   gmailThreadId: string;
+  messageIdHeader?: string | null;
   from: string;
   to: string;
   subject: string;

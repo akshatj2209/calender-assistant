@@ -414,6 +414,105 @@ Respond with JSON only:
     }
   }
 
+  /**
+   * Analyze a reply email to determine if it's a positive response and extract time preferences
+   */
+  async analyzeReplyForPositiveResponse(
+    replyEmail: EmailMessage, 
+    originalProposedSlots: any[]
+  ): Promise<{
+    isPositive: boolean;
+    confidence: number;
+    reasoning: string;
+    selectedTimeSlot?: number;
+    customTimeProposed?: {
+      dateTime: Date;
+      timeText: string;
+      confidence: number;
+    };
+  }> {
+    const proposedSlotsText = originalProposedSlots
+      .map((slot, index) => `Slot ${index + 1}: ${slot.formatted || new Date(slot.start).toLocaleString()}`)
+      .join('\n');
+
+    const prompt = `
+Analyze this email reply to determine if it's a positive response to a demo/meeting request.
+
+Original Proposed Time Slots:
+${proposedSlotsText}
+
+Reply Email:
+Subject: ${replyEmail.subject}
+From: ${replyEmail.from}
+Body: ${replyEmail.body}
+
+Analyze for:
+1. Is this a POSITIVE response (accepting/agreeing to the meeting)?
+2. Did they select one of the proposed time slots?
+3. Did they propose their own alternative time/date?
+4. Extract any specific date/time they mentioned
+
+Look for positive indicators:
+- "Yes", "sounds good", "works for me", "perfect", "great"
+- Selecting a specific time slot ("slot 1", "first option", "option 2")
+- Confirming availability ("I'm available", "that works")
+- Enthusiasm ("looking forward", "excited")
+
+Look for negative indicators:
+- "No", "not available", "can't make it", "won't work"
+- Declining the meeting explicitly
+- Out of office or automated replies
+- Requesting to reschedule without proposing times
+
+Respond with JSON only:
+{
+  "isPositive": boolean,
+  "confidence": number (0.0-1.0),
+  "reasoning": "brief explanation of decision",
+  "selectedTimeSlot": number or null (1-based index if they selected a slot),
+  "customTimeProposed": {
+    "dateTime": "ISO string if found",
+    "timeText": "exact text mentioning the time",
+    "confidence": number (0.0-1.0)
+  } or null
+}
+    `.trim();
+
+    return this.withRetry(async () => {
+      const response = await this.client.chat.completions.create({
+        model: config.openai.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 600,
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response content from OpenAI');
+      }
+
+      try {
+        const parsed = JSON.parse(content);
+        
+        // Convert customTimeProposed.dateTime to Date object if present
+        if (parsed.customTimeProposed?.dateTime) {
+          try {
+            parsed.customTimeProposed.dateTime = new Date(parsed.customTimeProposed.dateTime);
+          } catch (dateError) {
+            console.warn('OpenAI: Invalid date format in custom time proposal:', parsed.customTimeProposed.dateTime);
+            parsed.customTimeProposed = null;
+          }
+        }
+        
+        return parsed;
+      } catch (parseError) {
+        console.error('OpenAI: Failed to parse reply analysis response:', content);
+        throw new Error('Invalid JSON response from OpenAI reply analysis');
+      }
+    });
+  }
+
   // Get current API usage information (if available)
   async getApiUsage(): Promise<any> {
     // OpenAI doesn't provide usage info through the API directly

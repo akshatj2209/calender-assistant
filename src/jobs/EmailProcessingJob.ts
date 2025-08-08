@@ -1,12 +1,13 @@
+import { CalendarRepository } from '@/database/repositories/CalendarRepository';
 import { EmailRepository } from '@/database/repositories/EmailRepository';
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { UserRepository, UserWithTokens } from '@/database/repositories/UserRepository';
 import { calendarService } from '@/services/CalendarService';
 import { GmailService } from '@/services/GmailService';
-import { CronJob } from 'cron';
-// import { openAIService } from '@/services/OpenAIService';
+import { openaiService } from '@/services/OpenAIService';
 import { EmailMessage } from '@/types';
 import { Prisma, ProcessingStatus } from '@prisma/client';
+import { CronJob } from 'cron';
 
 interface TimePreferences {
   preferredDays?: string[];
@@ -184,6 +185,16 @@ export class EmailProcessingJob {
         console.log(`🤖 Email ${email.id} already processed, skipping`);
         return;
       }
+      let messageIdHeader: string | null = null;
+      if (userGmailService) {
+        try {
+          const fullMessage = await userGmailService.getMessage(email.id);
+          messageIdHeader = this.extractMessageIdHeader(fullMessage);
+          console.log(`📧 Extracted Message-ID: ${messageIdHeader}`);
+        } catch (error) {
+          console.warn(`📧 Could not extract Message-ID for ${email.id}:`, error);
+        }
+      }
 
       // Determine if this email is inbound (sent TO user) or outbound (sent BY user)
       const user = await this.userRepository.findById(userId);
@@ -214,6 +225,7 @@ export class EmailProcessingJob {
         userId,
         gmailMessageId: email.id,
         gmailThreadId: email.threadId,
+        messageIdHeader,
         from: email.from,
         to: email.to,
         subject: email.subject,
@@ -243,19 +255,28 @@ export class EmailProcessingJob {
       }
 
       // 2. AI Analysis - Check if it's a demo request (only for inbound emails)
-      const intentAnalysis = await this.analyzeEmailIntent(email);
+      const intentAnalysis = await openaiService.analyzeEmailIntent(email);
       
       if (!intentAnalysis.isDemoRequest) {
         console.log(`🤖 Email is not a demo request: ${email.subject}`);
+        
+        // Check if this is a reply to one of our sent messages
+        const isReplyToOurMessage = await this.checkIfReplyToSentMessage(userId, email);
+        
+        if (isReplyToOurMessage) {
+          console.log(`📧 This appears to be a reply to our sent message: ${email.subject}`);
+          await this.processReplyToSentMessage(userId, email, emailRecord);
+        }
+        
         await this.emailRepository.markAsProcessed(emailRecord.id, false);
         return;
       }
 
       console.log(`🤖 Demo request detected: ${email.subject} (confidence: ${intentAnalysis.confidence})`);
 
-      // 3. Extract time preferences and contact info
-      const timePreferences = await this.extractTimePreferences(email);
-      const contactInfo = this.extractContactInfo(email);
+      // 3. Extract time preferences and contact info using AI
+      const timePreferences = await openaiService.extractTimePreferences(email);
+      const contactInfo = await openaiService.extractContactInfo(email);
 
       // 4. Calculate when email will be sent (1 hour delay)
       const scheduledAt = new Date();
@@ -344,129 +365,30 @@ export class EmailProcessingJob {
     );
   }
 
-  private async analyzeEmailIntent(email: EmailMessage): Promise<IntentAnalysis> {
-    const prompt = `
-      Analyze this email and determine if it's requesting a product demo, sales meeting, or business consultation.
-      
-      Subject: ${email.subject}
-      From: ${email.from}
-      Body: ${email.body}
-      
-      Look for:
-      - Explicit requests for demos, meetings, calls
-      - Interest in learning more about products/services
-      - Requests for consultations or discussions
-      - Follow-ups from conferences, LinkedIn, referrals
-      - General business inquiries that could lead to sales opportunities
-      
-      Return JSON with:
-      {
-        "isDemoRequest": boolean,
-        "confidence": number (0-1),
-        "reasoning": "brief explanation of decision"
-      }
-    `;
+  // Old fallback methods removed - now using OpenAI service for all AI tasks
 
+  /**
+   * Extract Message-ID header from Gmail message for proper threading
+   */
+  private extractMessageIdHeader(gmailMessage: any): string | null {
     try {
-      // Note: This is a placeholder. Replace with actual OpenAI service call
-      const response = JSON.stringify({
-        isDemoRequest: this.fallbackIntentAnalysis(email).isDemoRequest,
-        confidence: this.fallbackIntentAnalysis(email).confidence,
-        reasoning: "Fallback keyword analysis used"
-      });
-      
-      return JSON.parse(response);
-    } catch (error) {
-      console.error('🤖 AI analysis failed, using fallback:', error);
-      return this.fallbackIntentAnalysis(email);
-    }
-  }
-
-  private fallbackIntentAnalysis(email: EmailMessage): IntentAnalysis {
-    const demoKeywords = [
-      'demo', 'meeting', 'schedule', 'interested', 'learn more', 
-      'product tour', 'walkthrough', 'consultation', 'discuss',
-      'show me', 'see the product', 'chat about', 'explore'
-    ];
-    
-    const content = `${email.subject} ${email.body}`.toLowerCase();
-    
-    const matchedKeywords = demoKeywords.filter(keyword => content.includes(keyword));
-    const hasKeywords = matchedKeywords.length > 0;
-    
-    return {
-      isDemoRequest: hasKeywords,
-      confidence: hasKeywords ? Math.min(0.8, matchedKeywords.length * 0.2) : 0.2,
-      reasoning: `Fallback analysis - ${hasKeywords ? `Found keywords: ${matchedKeywords.join(', ')}` : 'No relevant keywords found'}`
-    };
-  }
-
-  private async extractTimePreferences(email: EmailMessage): Promise<TimePreferences> {
-    // Fallback time preference extraction
-    const content = `${email.subject} ${email.body}`.toLowerCase();
-    
-    const timeKeywords = {
-      morning: ['morning', 'am', '9am', '10am', '11am'],
-      afternoon: ['afternoon', 'pm', '1pm', '2pm', '3pm', '4pm'],
-      evening: ['evening', '5pm', '6pm', 'after work']
-    };
-
-    let timeRange: 'morning' | 'afternoon' | 'evening' | 'flexible' = 'flexible';
-    
-    for (const [range, keywords] of Object.entries(timeKeywords)) {
-      if (keywords.some(keyword => content.includes(keyword))) {
-        timeRange = range as 'morning' | 'afternoon' | 'evening';
-        break;
+      if (!gmailMessage?.payload?.headers) {
+        return null;
       }
+
+      // Find the Message-ID header
+      const messageIdHeader = gmailMessage.payload.headers.find(
+        (header: any) => header.name?.toLowerCase() === 'message-id'
+      );
+
+      return messageIdHeader?.value || null;
+    } catch (error) {
+      console.error('📧 Error extracting Message-ID header:', error);
+      return null;
     }
-
-    const urgencyKeywords = {
-      high: ['urgent', 'asap', 'immediately', 'today', 'this week'],
-      low: ['eventually', 'sometime', 'no rush', 'when you can']
-    };
-
-    let urgency: 'low' | 'medium' | 'high' = 'medium';
-    
-    if (urgencyKeywords.high.some(keyword => content.includes(keyword))) {
-      urgency = 'high';
-    } else if (urgencyKeywords.low.some(keyword => content.includes(keyword))) {
-      urgency = 'low';
-    }
-
-    return {
-      timeRange,
-      urgency
-    };
   }
 
-  private extractContactInfo(email: EmailMessage): ContactInfo {
-    // Extract name from "Name <email>" format
-    const fromMatch = email.from.match(/^(.+?)\s*<(.+?)>$/);
-    
-    const contactEmail = fromMatch ? fromMatch[2].trim() : email.from;
-    const contactName = fromMatch ? fromMatch[1].trim() : contactEmail.split('@')[0];
-
-    return {
-      name: contactName,
-      email: contactEmail,
-      company: this.extractCompanyFromEmail(contactEmail)
-    };
-  }
-
-  private extractCompanyFromEmail(emailAddress: string): string | undefined {
-    const domain = emailAddress.split('@')[1];
-    if (!domain) {
-      return undefined;
-    }
-    
-    const cleanDomain = domain
-      .replace(/^(www\.|mail\.)/, '')
-      .replace(/\.(com|org|net|io|co).*$/, '');
-    
-    return cleanDomain.charAt(0).toUpperCase() + cleanDomain.slice(1);
-  }
-
-  private async findAvailableTimeSlots(userId: string, preferences: TimePreferences, emailSendTime: Date): Promise<TimeSlot[]> {
+  private async findAvailableTimeSlots(userId: string, preferences: any, emailSendTime: Date): Promise<TimeSlot[]> {
     try {
       // Calculate minimum start time for slots: email send time + 2.5 hour buffer
       const minSlotStartTime = new Date(emailSendTime.getTime() + (2.5 * 60 * 60 * 1000));
@@ -499,7 +421,7 @@ export class EmailProcessingJob {
     }
   }
 
-  private generateTimeSlots(startDate: Date, endDate: Date, events: CalendarEvent[], preferences: TimePreferences, minSlotStartTime: Date): TimeSlot[] {
+  private generateTimeSlots(startDate: Date, endDate: Date, events: CalendarEvent[], preferences: any, minSlotStartTime: Date): TimeSlot[] {
     const slots: TimeSlot[] = [];
     const current = new Date(startDate);
     
@@ -572,7 +494,7 @@ export class EmailProcessingJob {
     return slots;
   }
 
-  private async generateResponse(email: EmailMessage, contactInfo: ContactInfo, timeSlots: TimeSlot[]): Promise<{ subject: string; body: string }> {
+  private async generateResponse(email: EmailMessage, contactInfo: any, timeSlots: TimeSlot[]): Promise<{ subject: string; body: string }> {
     const slotsText = timeSlots
       .map((slot, index) => `${index + 1}. ${slot.formatted}`)
       .join('\n');
@@ -595,6 +517,199 @@ Best regards,
 Sales Team`;
 
     return { subject, body };
+  }
+
+  /**
+   * Check if this inbound email is a reply to a message we sent via ResponseSenderJob
+   */
+  private async checkIfReplyToSentMessage(userId: string, email: EmailMessage): Promise<boolean> {
+    try {
+      // Look for sent scheduled responses in the same thread
+      const allResponses = await this.scheduledResponseRepository.findMany({
+        userId
+      });
+      
+      // Filter for sent responses from last 7 days
+      const sentResponses = allResponses.filter(response => 
+        response.status === 'SENT' && 
+        response.sentAt &&
+        response.sentAt >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      );
+
+      // Check if any sent response matches this thread
+      // We need to get the full response with emailRecord included
+      type ScheduledResponseWithEmail = Prisma.ScheduledResponseGetPayload<{ include: { emailRecord: true } }>;
+      for (const response of sentResponses) {
+        const fullResponse = await this.scheduledResponseRepository.findById(response.id) as ScheduledResponseWithEmail | null;
+        if (fullResponse?.emailRecord?.gmailThreadId === email.threadId) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      console.error('📧 Error checking if email is reply to sent message:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Process a reply to our sent message - check for positive response and create calendar event
+   */
+  private async processReplyToSentMessage(userId: string, reply: EmailMessage, emailRecord: any): Promise<void> {
+    try {
+      // Find the original sent response by getting all sent responses and filtering
+      const allResponses = await this.scheduledResponseRepository.findMany({
+        userId
+      });
+      
+      // Get responses with email record data included
+      type ScheduledResponseWithEmail = Prisma.ScheduledResponseGetPayload<{ include: { emailRecord: true } }>;
+      const sentResponsesWithEmailRecord: ScheduledResponseWithEmail[] = [];
+      for (const response of allResponses) {
+        if (response.status === 'SENT') {
+          const fullResponse = await this.scheduledResponseRepository.findById(response.id) as ScheduledResponseWithEmail | null;
+          if (fullResponse) {
+            sentResponsesWithEmailRecord.push(fullResponse);
+          }
+        }
+      }
+
+      // Filter by thread ID
+      const sentResponse = sentResponsesWithEmailRecord.filter(response => 
+        response.emailRecord?.gmailThreadId === reply.threadId
+      );
+
+      if (sentResponse.length === 0) {
+        console.log('📧 No matching sent response found for reply');
+        return;
+      }
+
+      const originalResponse = sentResponse[0];
+      console.log(`📧 Processing reply to sent response: ${originalResponse.subject}`);
+
+      // AI-powered positive response detection with time extraction
+      const proposedSlots = originalResponse.proposedTimeSlots as any[];
+      const aiAnalysis = await openaiService.analyzeReplyForPositiveResponse(reply, proposedSlots || []);
+      
+      console.log(`🤖 AI Analysis Result:`);
+      console.log(`   - Is Positive: ${aiAnalysis.isPositive}`);
+      console.log(`   - Confidence: ${aiAnalysis.confidence}`);
+      console.log(`   - Reasoning: ${aiAnalysis.reasoning}`);
+      console.log(`   - Selected Slot: ${aiAnalysis.selectedTimeSlot}`);
+      console.log(`   - Custom Time: ${aiAnalysis.customTimeProposed?.timeText}`);
+      
+      if (aiAnalysis.isPositive && aiAnalysis.confidence > 0.6) {
+        console.log(`✅ Positive reply detected with high confidence! Creating calendar event...`);
+        
+        // Create calendar event with selected or custom time
+        await this.createCalendarEventFromReply(originalResponse, reply, aiAnalysis);
+        
+        console.log(`🎉 Successfully processed positive reply and created calendar event!`);
+      } else {
+        console.log(`❌ Reply doesn't appear to be positive (confidence: ${aiAnalysis.confidence}): ${aiAnalysis.reasoning}`);
+      }
+
+    } catch (error) {
+      console.error('📧 Error processing reply to sent message:', error);
+    }
+  }
+
+
+  /**
+   * Create calendar event from positive reply with AI-extracted time preferences
+   */
+  private async createCalendarEventFromReply(
+    originalResponse: any, 
+    reply: EmailMessage, 
+    aiAnalysis: any
+  ): Promise<void> {
+    try {
+      const proposedSlots = originalResponse.proposedTimeSlots as any[];
+      
+      if (!proposedSlots || proposedSlots.length === 0) {
+        console.log('🗓️ No proposed time slots found');
+        return;
+      }
+      
+      // Use AI-selected slot or custom time, fall back to first slot
+      let selectedSlot;
+      
+      if (aiAnalysis.selectedTimeSlot && aiAnalysis.selectedTimeSlot <= proposedSlots.length) {
+        // User selected a specific proposed slot
+        selectedSlot = proposedSlots[aiAnalysis.selectedTimeSlot - 1];
+        console.log(`🗓️ Using AI-selected slot ${aiAnalysis.selectedTimeSlot}: ${selectedSlot.formatted}`);
+      } else if (aiAnalysis.customTimeProposed && aiAnalysis.customTimeProposed.confidence > 0.7) {
+        // User proposed a custom time with high confidence
+        const customTime = aiAnalysis.customTimeProposed.dateTime;
+        const endTime = new Date(customTime.getTime() + 30 * 60 * 1000); // 30 minutes duration
+        selectedSlot = {
+          start: customTime,
+          end: endTime,
+          formatted: customTime.toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          })
+        };
+        console.log(`🗓️ Using AI-extracted custom time: ${selectedSlot.formatted} (from: "${aiAnalysis.customTimeProposed.timeText}")`);
+      } else {
+        // Fall back to first proposed slot
+        selectedSlot = proposedSlots[0];
+        console.log(`🗓️ Using first proposed slot as fallback: ${selectedSlot.formatted}`);
+      }
+      
+      if (!selectedSlot || !selectedSlot.start) {
+        console.log('🗓️ Invalid time slot data');
+        return;
+      }
+      
+      // Create calendar event
+      const eventData = {
+        summary: `Demo Call - ${originalResponse.recipientName || 'Client'}`,
+        start: {
+          dateTime: new Date(selectedSlot.start).toISOString(),
+          timezone: 'America/Los_Angeles'
+        },
+        end: {
+          dateTime: new Date(selectedSlot.end).toISOString(),
+          timezone: 'America/Los_Angeles'
+        },
+        attendees: [
+          {
+            email: originalResponse.recipientEmail,
+            displayName: originalResponse.recipientName || 'Client'
+          }
+        ],
+        description: `Demo call scheduled via email automation.\n\nOriginal inquiry: ${originalResponse.emailRecord?.subject}\n\nClient: ${originalResponse.recipientEmail}`,
+        sendNotifications: true
+      };
+      
+      const createdEvent = await calendarService.createEvent(eventData, 'primary');
+      console.log(`🗓️ Calendar event created: ${createdEvent.id}`);
+      
+      // Store in database
+      const calendarRepository = new CalendarRepository();
+      await calendarRepository.create({
+        userId: originalResponse.userId,
+        emailRecordId: originalResponse.emailRecordId,
+        googleEventId: createdEvent.id,
+        calendarId: 'primary',
+        summary: eventData.summary,
+        description: eventData.description,
+        startTime: new Date(selectedSlot.start),
+        endTime: new Date(selectedSlot.end),
+        timezone: 'America/Los_Angeles',
+        attendeeEmail: originalResponse.recipientEmail,
+        attendeeName: originalResponse.recipientName || 'Client'
+      });
+      
+    } catch (error) {
+      console.error('🗓️ Error creating calendar event:', error);
+    }
   }
 
   // Manual trigger for testing

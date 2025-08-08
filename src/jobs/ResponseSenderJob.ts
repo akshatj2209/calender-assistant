@@ -1,5 +1,4 @@
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
-import { gmailService } from '@/services/GmailService';
 import { CronJob } from 'cron';
 
 export class ResponseSenderJob {
@@ -83,20 +82,36 @@ export class ResponseSenderJob {
   private async sendResponse(response: any) {
     try {
       console.log(`📤 Sending response to: ${response.recipientEmail}`);
+      // Get the user to set up Gmail service with their tokens
+      const { UserRepository } = await import('@/database/repositories/UserRepository');
+      const userRepository = new UserRepository();
+      const user = await userRepository.findById(response.userId);
+      
+      if (!user || !user.googleTokens) {
+        throw new Error(`User ${response.userId} has no Google tokens`);
+      }
+
+      // Create user-specific Gmail service
+      const userGmailService = new (await import('@/services/GmailService')).GmailService();
+      userGmailService.setUserTokens(user.googleTokens.accessToken, user.googleTokens.refreshToken || '');
 
       // Send email via Gmail
-      const sentMessage = await gmailService.sendEmail({
+      const sentMessage = await userGmailService.sendEmail({
         to: response.recipientEmail,
         subject: response.subject,
         body: response.body,
-        replyToMessageId: response.emailRecord?.gmailMessageId,
+        replyToMessageId: response.emailRecord?.messageIdHeader,
         threadId: response.emailRecord?.gmailThreadId
       });
 
-      // Mark as sent
-      await this.scheduledResponseRepository.markAsSent(response.id, sentMessage.id);
+      // Mark as sent with additional tracking info
+      await this.scheduledResponseRepository.update(response.id, {
+        status: 'SENT',
+        sentAt: new Date(),
+        sentMessageId: sentMessage.id
+      });
 
-      console.log(`📤 Successfully sent response to: ${response.recipientEmail}`);
+      console.log(`📤 Successfully sent response to: ${response.recipientEmail} (Message ID: ${sentMessage.id})`);
       
     } catch (error) {
       console.error(`📤 Error sending response ${response.id}:`, error);
