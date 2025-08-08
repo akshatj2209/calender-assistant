@@ -1,6 +1,6 @@
-import { Router } from 'express';
-import { ScheduledResponseRepository } from '@/repositories/ScheduledResponseRepository';
+import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { ResponseStatus } from '@prisma/client';
+import { Router } from 'express';
 
 const router = Router();
 const scheduledResponseRepository = new ScheduledResponseRepository();

@@ -1,6 +1,6 @@
 import { EmailRepository } from '@/database/repositories/EmailRepository';
+import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { UserRepository } from '@/database/repositories/UserRepository';
-import { ScheduledResponseRepository } from '@/repositories/ScheduledResponseRepository';
 import { calendarService } from '@/services/CalendarService';
 import { gmailService } from '@/services/GmailService';
 import { CronJob } from 'cron';

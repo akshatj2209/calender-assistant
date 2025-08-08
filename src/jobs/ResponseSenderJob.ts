@@ -1,7 +1,6 @@
-import { CronJob } from 'cron';
-import { ScheduledResponseRepository } from '@/repositories/ScheduledResponseRepository';
+import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { gmailService } from '@/services/GmailService';
-import { ResponseStatus } from '@prisma/client';
+import { CronJob } from 'cron';
 
 export class ResponseSenderJob {
   private cronJob: CronJob;
