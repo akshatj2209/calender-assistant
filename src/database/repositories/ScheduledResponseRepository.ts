@@ -141,6 +141,12 @@ export class ScheduledResponseRepository extends BaseRepository<ScheduledRespons
     });
   }
 
+  async markAsExpired(id: string): Promise<ScheduledResponse> {
+    return this.update(id, {
+      status: ResponseStatus.EXPIRED
+    });
+  }
+
   async findByEmailRecordId(emailRecordId: string): Promise<ScheduledResponse | null> {
     return this.prisma.scheduledResponse.findFirst({
       where: { emailRecordId },

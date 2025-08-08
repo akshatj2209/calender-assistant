@@ -241,8 +241,12 @@ export class EmailProcessingJob {
       const timePreferences = await this.extractTimePreferences(email);
       const contactInfo = this.extractContactInfo(email);
 
-      // 4. Find available time slots
-      const timeSlots = await this.findAvailableTimeSlots(userId, timePreferences);
+      // 4. Calculate when email will be sent (1 hour delay)
+      const scheduledAt = new Date();
+      scheduledAt.setHours(scheduledAt.getHours() + 1);
+
+      // 5. Find available time slots (starting after email send time + buffer)
+      const timeSlots = await this.findAvailableTimeSlots(userId, timePreferences, scheduledAt);
 
       if (timeSlots.length === 0) {
         console.log(`🤖 No available time slots found for: ${email.subject}`);
@@ -250,12 +254,8 @@ export class EmailProcessingJob {
         return;
       }
 
-      // 5. Generate response
+      // 6. Generate response
       const response = await this.generateResponse(email, contactInfo, timeSlots);
-
-      // 6. Create scheduled response (1 hour delay)
-      const scheduledAt = new Date();
-      scheduledAt.setHours(scheduledAt.getHours() + 1);
 
       console.log(`🤖 Creating scheduled response:`);
       console.log(`🤖   - Assigned to userId: ${userId}`);
@@ -455,12 +455,20 @@ export class EmailProcessingJob {
     return cleanDomain.charAt(0).toUpperCase() + cleanDomain.slice(1);
   }
 
-  private async findAvailableTimeSlots(userId: string, preferences: TimePreferences): Promise<TimeSlot[]> {
+  private async findAvailableTimeSlots(userId: string, preferences: TimePreferences, emailSendTime: Date): Promise<TimeSlot[]> {
     try {
-      // Find next 7 days for availability
-      const startDate = new Date();
-      const endDate = new Date();
+      // Calculate minimum start time for slots: email send time + 2.5 hour buffer
+      const minSlotStartTime = new Date(emailSendTime.getTime() + (2.5 * 60 * 60 * 1000));
+      
+      // Find next 7 days for availability from the minimum start time
+      const startDate = new Date(minSlotStartTime);
+      const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 7);
+
+      console.log(`🤖 Finding time slots:`);
+      console.log(`🤖   - Email will be sent: ${emailSendTime.toISOString()}`);
+      console.log(`🤖   - Earliest slot time: ${minSlotStartTime.toISOString()}`);
+      console.log(`🤖   - Search until: ${endDate.toISOString()}`);
 
       // Get calendar events
       const events = await calendarService.getEvents('primary', {
@@ -469,7 +477,7 @@ export class EmailProcessingJob {
       });
 
       // Generate time slots (simplified algorithm)
-      const timeSlots = this.generateTimeSlots(startDate, endDate, events || [], preferences);
+      const timeSlots = this.generateTimeSlots(startDate, endDate, events || [], preferences, minSlotStartTime);
 
       // Return top 3 slots
       return timeSlots.slice(0, 3);
@@ -480,10 +488,27 @@ export class EmailProcessingJob {
     }
   }
 
-  private generateTimeSlots(startDate: Date, endDate: Date, events: any[], preferences: TimePreferences): TimeSlot[] {
+  private generateTimeSlots(startDate: Date, endDate: Date, events: any[], preferences: TimePreferences, minSlotStartTime: Date): TimeSlot[] {
     const slots: TimeSlot[] = [];
     const current = new Date(startDate);
-    current.setHours(9, 0, 0, 0); // Start at 9 AM
+    
+    // Start at the later of: business hours start (9 AM) or minimum slot time
+    const businessStart = new Date(current);
+    businessStart.setHours(9, 0, 0, 0);
+    
+    if (current < businessStart) {
+      current.setTime(businessStart.getTime());
+    }
+    
+    // Ensure we don't start before the minimum slot time
+    if (current < minSlotStartTime) {
+      current.setTime(minSlotStartTime.getTime());
+      // Round up to next 30-minute slot
+      const minutes = current.getMinutes();
+      if (minutes % 30 !== 0) {
+        current.setMinutes(Math.ceil(minutes / 30) * 30, 0, 0);
+      }
+    }
 
     while (current < endDate && slots.length < 5) {
       // Skip weekends
@@ -500,6 +525,12 @@ export class EmailProcessingJob {
         continue;
       }
 
+      // Ensure slot is not before minimum start time
+      if (current < minSlotStartTime) {
+        current.setMinutes(current.getMinutes() + 30);
+        continue;
+      }
+
       // Check if slot conflicts with existing events
       const slotEnd = new Date(current.getTime() + 30 * 60 * 1000); // 30 minutes
       const hasConflict = events.some((event: any) => {
@@ -508,7 +539,7 @@ export class EmailProcessingJob {
         return current < eventEnd && slotEnd > eventStart;
       });
 
-      if (!hasConflict && current > new Date()) {
+      if (!hasConflict) {
         slots.push({
           start: new Date(current),
           end: new Date(slotEnd),

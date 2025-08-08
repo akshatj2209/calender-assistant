@@ -324,6 +324,7 @@ enum ResponseStatus {
   CANCELLED      // User cancelled
   FAILED         // Failed to send
   EDITING        // User is currently editing
+  EXPIRED        // Too old to send (6+ hours)
 }
 
 enum CalendarEventStatus {
