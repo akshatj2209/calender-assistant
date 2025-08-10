@@ -1,4 +1,5 @@
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
+import { gmailService } from '@/services/GmailService';
 import { CronJob } from 'cron';
 
 export class ResponseSenderJob {
@@ -82,6 +83,10 @@ export class ResponseSenderJob {
   private async sendResponse(response: any) {
     try {
       console.log(`📤 Sending response to: ${response.recipientEmail}`);
+      console.log(`📤 Response subject: ${response.subject}`);
+      console.log(`📤 Response body length: ${response.body?.length || 'undefined'}`);
+      console.log(`📤 Response body preview: ${response.body?.substring(0, 100)}...`);
+      
       // Get the user to set up Gmail service with their tokens
       const { UserRepository } = await import('@/database/repositories/UserRepository');
       const userRepository = new UserRepository();
@@ -92,7 +97,7 @@ export class ResponseSenderJob {
       }
 
       // Create user-specific Gmail service
-      const userGmailService = new (await import('@/services/GmailService')).GmailService();
+      const userGmailService = gmailService;
       userGmailService.setUserTokens(user.googleTokens.accessToken, user.googleTokens.refreshToken || '');
 
       // Send email via Gmail
@@ -102,7 +107,7 @@ export class ResponseSenderJob {
         body: response.body,
         replyToMessageId: response.emailRecord?.messageIdHeader,
         threadId: response.emailRecord?.gmailThreadId
-      });
+      }, response.userId);
 
       // Mark as sent with additional tracking info
       await this.scheduledResponseRepository.update(response.id, {

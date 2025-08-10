@@ -1,46 +1,33 @@
-import OpenAI from 'openai';
+import { ContactInfo, EmailMessage } from '@/types';
 import { config } from '@/utils/config';
-import { EmailMessage, EmailIntent, TimePreference, ContactInfo } from '@/types';
+import OpenAI from 'openai';
+import { calendarService } from './CalendarMCP';
 
-export interface IntentAnalysisResult {
+export interface MCPAnalysisResult {
   isDemoRequest: boolean;
   confidence: number;
-  intentType: 'demo' | 'meeting' | 'call' | 'presentation' | 'unknown';
-  urgency: 'low' | 'medium' | 'high';
-  reasoning: string;
-  keywords: string[];
-}
-
-export interface TimeExtractionResult {
-  preferredDays?: string[];
-  specificDates?: string[];
-  preferredTimes?: string[];
-  timeRange?: 'morning' | 'afternoon' | 'evening' | 'flexible';
-  duration?: number;
-  timezone?: string;
-  urgency: 'low' | 'medium' | 'high';
-  avoidTimes?: string[];
-  flexibility: 'very_flexible' | 'somewhat_flexible' | 'specific_times';
-  businessDaysOnly: boolean;
+  contactInfo: ContactInfo;
+  proposedTimeSlots: Array<{
+    start: string;
+    end: string;
+    formatted: string;
+  }>;
+  emailResponse: string;
   reasoning: string;
 }
 
-export interface ResponseGenerationOptions {
-  recipientName: string;
-  proposedTimes: Date[];
-  companyName?: string;
-  senderName?: string;
-  isReply?: boolean;
-}
-
+/**
+ * OpenAI service with MCP-style function calling for calendar integration
+ * AI can directly call calendar functions to find available slots and create events
+ */
 export class OpenAIService {
   private client: OpenAI;
   private readonly maxRetries = 3;
-  private readonly baseDelay = 1000; // 1 second
+  private readonly baseDelay = 1000;
 
   constructor() {
     this.client = new OpenAI({
-      apiKey: config.openai.apiKey
+      apiKey: config.openai.apiKey,
     });
   }
 
@@ -52,370 +39,297 @@ export class OpenAIService {
         return await operation();
       } catch (error) {
         lastError = error as Error;
-        
+
         if (attempt === this.maxRetries) {
           break;
         }
 
-        // Exponential backoff
         const delay = this.baseDelay * Math.pow(2, attempt - 1);
-        console.log(`OpenAI: Attempt ${attempt} failed, retrying in ${delay}ms...`);
+        console.log(`OpenAI MCP: Attempt ${attempt} failed, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
-    console.error('OpenAI: All retry attempts failed:', lastError);
-    throw new Error(`OpenAI API failed after ${this.maxRetries} attempts: ${lastError?.message}`);
+    console.error('OpenAI MCP: All retry attempts failed:', lastError);
+    throw new Error(`OpenAI MCP failed after ${this.maxRetries} attempts: ${lastError?.message}`);
   }
 
-  async analyzeEmailIntent(email: EmailMessage): Promise<IntentAnalysisResult> {
+  /**
+   * Analyze email and use MCP tools to find available slots and generate response
+   * AI directly calls calendar functions to check real availability
+   */
+  async analyzeEmailAndSchedule(email: EmailMessage): Promise<MCPAnalysisResult> {
+    const currentDate = new Date().toISOString().split('T')[0];
+    const searchEndDate = new Date();
+    searchEndDate.setDate(searchEndDate.getDate() + 7); // Search next 7 days
+
+    const tools = calendarService.getMCPTools();
+
     const prompt = `
-You are an AI assistant that analyzes business emails to identify demo requests and sales inquiries.
-
-Analyze the following email and determine if it's requesting a product demonstration, sales meeting, or similar business meeting.
-
-Consider these factors:
-- Explicit requests ("can we schedule a demo", "interested in a meeting")
-- Implicit interest ("would like to learn more", "tell me about your product")
-- Business context and professional language
-- Urgency indicators ("urgent", "asap", "this week")
-- Intent strength and clarity
+You are an AI sales assistant that helps schedule product demos. Analyze this email and use calendar tools to find available time slots if it's a demo request.
 
 Email Details:
 Subject: ${email.subject}
 From: ${email.from}
 Body: ${email.body}
 
-Respond with a JSON object only:
+Current date: ${currentDate}
+
+Your tasks:
+1. Determine if this is a demo request (confidence 0.0-1.0)
+2. Extract contact information (name, email, company)
+3. If it's a demo request, use calendar tools to find 2-3 available time slots in the next 5 business days
+4. Generate a professional email response with the available times
+
+Steps:
+- Only call calendar functions if this appears to be a demo request (confidence > 0.7)
+- Look for time preferences in the email (morning/afternoon, specific days)
+- Use find_available_slots to get real calendar availability
+- Respect business hours (9 AM - 5 PM) and working days (Mon-Fri)
+- Propose 30-minute demo slots
+- VERY IMPORTANT: The demo slots should never be consecutive. You should propose them as for convenience of the user. maybe like 2 slots on 1 day and 1 slot on other day and scatter them will even on the same day. It SHOULD NOT BE LIKE 1 slot on 1 PM and the other on 1:30 PM. If travelling is needed as per intent, always propose slots somewhat later in the start and each should be on different day
+
+Respond with a JSON object:
 {
   "isDemoRequest": boolean,
   "confidence": number (0.0-1.0),
-  "intentType": "demo" | "meeting" | "call" | "presentation" | "unknown",
-  "urgency": "low" | "medium" | "high", 
-  "reasoning": "brief explanation of decision",
-  "keywords": ["key", "phrases", "found"]
+  "contactInfo": {
+    "name": "extracted name",
+    "email": "email address",
+    "company": "company name if found"
+  },
+  "proposedTimeSlots": [
+    {
+      "start": "ISO datetime",
+      "end": "ISO datetime",
+      "formatted": "human readable time"
+    }
+  ],
+  "emailResponse": "professional email response text",
+  "reasoning": "explanation of analysis and slot selection"
 }
-    `.trim();
+    `;
 
     return this.withRetry(async () => {
       const response = await this.client.chat.completions.create({
         model: config.openai.model,
         messages: [{ role: 'user', content: prompt }],
+        tools: tools,
+        tool_choice: 'auto',
         temperature: 0.1,
-        max_tokens: 500,
-        response_format: { type: 'json_object' }
+        max_tokens: 2000,
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response content from OpenAI');
+      const message = response.choices[0]?.message;
+      if (!message) {
+        throw new Error('No response from OpenAI MCP');
       }
 
-      try {
-        return JSON.parse(content) as IntentAnalysisResult;
-      } catch (parseError) {
-        console.error('OpenAI: Failed to parse JSON response:', content);
-        throw new Error('Invalid JSON response from OpenAI');
+      // Handle function calls if AI decided to use calendar tools
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        console.log(`OpenAI MCP: AI is calling ${message.tool_calls.length} calendar tools`);
+        
+        const functionResults: any[] = [];
+
+        for (const toolCall of message.tool_calls) {
+          console.log(`OpenAI MCP: Calling ${toolCall.function.name}`);
+          
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            let result: any;
+
+            switch (toolCall.function.name) {
+              case 'find_available_slots':
+                result = await calendarService.find_available_slots(args);
+                break;
+              case 'get_calendar_events':
+                result = await calendarService.get_calendar_events(args);
+                break;
+              case 'create_calendar_event':
+                result = await calendarService.create_calendar_event(args);
+                break;
+              default:
+                throw new Error(`Unknown function: ${toolCall.function.name}`);
+            }
+
+            functionResults.push({
+              tool_call_id: toolCall.id,
+              result: result,
+            });
+
+            console.log(`OpenAI MCP: ${toolCall.function.name} returned ${Array.isArray(result) ? result.length : 1} items`);
+          } catch (error) {
+            console.error(`OpenAI MCP: Error calling ${toolCall.function.name}:`, error);
+            functionResults.push({
+              tool_call_id: toolCall.id,
+              error: `Failed to call ${toolCall.function.name}: ${error}`,
+            });
+          }
+        }
+
+        // Send function results back to AI for final response generation
+        const messagesWithFunctions = [
+          { role: 'user' as const, content: prompt },
+          message,
+          ...functionResults.map(result => ({
+            role: 'tool' as const,
+            tool_call_id: result.tool_call_id,
+            content: result.error || JSON.stringify(result.result),
+          })),
+          {
+            role: 'user' as const,
+            content: 'Based on the calendar information, provide your final analysis and response as JSON.',
+          },
+        ];
+
+        const finalResponse = await this.client.chat.completions.create({
+          model: config.openai.model,
+          messages: messagesWithFunctions,
+          temperature: 0.1,
+          max_tokens: 1500,
+          response_format: { type: 'json_object' },
+        });
+
+        const finalContent = finalResponse.choices[0]?.message?.content;
+        if (!finalContent) {
+          throw new Error('No final response content from OpenAI MCP');
+        }
+
+        try {
+          const result = JSON.parse(finalContent) as MCPAnalysisResult;
+          console.log(`OpenAI MCP: Analysis complete. Demo request: ${result.isDemoRequest}, Slots: ${result.proposedTimeSlots.length}`);
+          return result;
+        } catch (parseError) {
+          console.error('OpenAI MCP: Failed to parse final JSON response:', finalContent);
+          throw new Error('Invalid JSON response from OpenAI MCP analysis');
+        }
+      } else {
+        // No tool calls - AI determined it's not a demo request or doesn't need calendar data
+        const content = message.content;
+        if (!content) {
+          throw new Error('No response content from OpenAI MCP');
+        }
+
+        try {
+          const result = JSON.parse(content) as MCPAnalysisResult;
+          console.log(`OpenAI MCP: Analysis complete without calendar tools. Demo request: ${result.isDemoRequest}`);
+          return result;
+        } catch (parseError) {
+          console.error('OpenAI MCP: Failed to parse JSON response:', content);
+          throw new Error('Invalid JSON response from OpenAI MCP analysis');
+        }
       }
     });
   }
 
-  async extractTimePreferences(email: EmailMessage): Promise<TimeExtractionResult> {
-    const currentDate = new Date().toISOString().split('T')[0];
-    const currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  /**
+   * Let AI autonomously create calendar events using MCP tools
+   */
+  async createDemoEventWithAI(
+    contactInfo: ContactInfo,
+    selectedTimeSlot: { start: string; end: string },
+    customDescription?: string
+  ): Promise<any> {
+    const tools = calendarService.getMCPTools();
 
     const prompt = `
-Extract time preferences and scheduling information from this email content.
+Create a calendar event for a product demo meeting.
 
-Current date: ${currentDate}
-Current timezone: ${currentTimezone}
+Contact Information:
+- Name: ${contactInfo.name}
+- Email: ${contactInfo.email}
+- Company: ${contactInfo.company || 'N/A'}
 
-Email Content:
-Subject: ${email.subject}
-Body: ${email.body}
+Selected Time Slot:
+- Start: ${selectedTimeSlot.start}
+- End: ${selectedTimeSlot.end}
 
-Analyze and extract:
-- Specific days mentioned (monday, tuesday, etc.)
-- Specific dates (if any concrete dates mentioned)
-- Time preferences (morning, afternoon, specific times)
-- Duration if mentioned
-- Timezone if explicitly stated
-- Urgency level based on language
-- Times/days to avoid if mentioned
-- Overall scheduling flexibility
+Please create a professional demo meeting event with:
+- Appropriate title including the person's name
+- Professional description mentioning it's a product demonstration
+- Include the attendee's email
+- Add a meeting location (online/Google Meet)
 
-Respond with JSON only:
-{
-  "preferredDays": ["monday", "tuesday"] or null,
-  "specificDates": ["2024-08-05"] or null,
-  "preferredTimes": ["morning", "2pm"] or null,
-  "timeRange": "morning" | "afternoon" | "evening" | "flexible" or null,
-  "duration": number (minutes) or null,
-  "timezone": "timezone_name" or null,
-  "urgency": "low" | "medium" | "high",
-  "avoidTimes": ["early morning"] or null,
-  "flexibility": "very_flexible" | "somewhat_flexible" | "specific_times",
-  "businessDaysOnly": boolean,
-  "reasoning": "brief explanation of extracted preferences"
-}
-    `.trim();
+Use the create_calendar_event function to create this meeting.
+    `;
 
     return this.withRetry(async () => {
       const response = await this.client.chat.completions.create({
         model: config.openai.model,
         messages: [{ role: 'user', content: prompt }],
+        tools: tools.filter(tool => tool.function.name === 'create_calendar_event'),
+        tool_choice: { type: 'function', function: { name: 'create_calendar_event' } },
         temperature: 0.1,
-        max_tokens: 600,
-        response_format: { type: 'json_object' }
+        max_tokens: 1000,
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response content from OpenAI');
+      const message = response.choices[0]?.message;
+      if (!message?.tool_calls) {
+        throw new Error('AI did not call create_calendar_event function');
       }
 
-      try {
-        return JSON.parse(content) as TimeExtractionResult;
-      } catch (parseError) {
-        console.error('OpenAI: Failed to parse JSON response:', content);
-        throw new Error('Invalid JSON response from OpenAI');
-      }
+      const toolCall = message.tool_calls[0];
+      const args = JSON.parse(toolCall.function.arguments);
+      
+      console.log('OpenAI MCP: AI creating calendar event:', args.summary);
+      
+      const result = await calendarService.create_calendar_event(args);
+      
+      console.log('OpenAI MCP: Calendar event created successfully:', result.id);
+      return result;
     });
   }
 
-  async generateEmailResponse(options: ResponseGenerationOptions): Promise<string> {
-    const { recipientName, proposedTimes, companyName, senderName, isReply } = options;
-
-    const timeFormatter = new Intl.DateTimeFormat('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short'
-    });
-
-    const formattedTimes = proposedTimes
-      .map((time, index) => `${index + 1}. ${timeFormatter.format(time)}`)
-      .join('\n');
-
-    const prompt = `
-Generate a professional, friendly email response for scheduling a product demo.
-
-Context:
-- Recipient: ${recipientName}
-- Company: ${companyName || 'our company'}
-- Sender: ${senderName || 'Sales Team'}
-- This is ${isReply ? 'a reply to' : 'an initial response to'} a demo request
-- Proposed meeting times:
-${formattedTimes}
-
-Requirements:
-- Professional but warm tone
-- Thank them for their interest
-- Present the time options clearly
-- Ask them to confirm which works best
-- Mention you'll send a calendar invite
-- Keep it concise (under 150 words)
-- Include a brief closing about looking forward to the demo
-
-Generate only the email body text (no subject line, no signature block).
-    `.trim();
-
-    return this.withRetry(async () => {
-      const response = await this.client.chat.completions.create({
-        model: config.openai.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 400
-      });
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response content from OpenAI');
-      }
-
-      return content.trim();
-    });
-  }
-
-  async extractContactInfo(email: EmailMessage): Promise<ContactInfo> {
-    const prompt = `
-Extract contact information from this email.
-
-Email:
-From: ${email.from}
-Subject: ${email.subject}
-Body: ${email.body}
-
-Extract and clean up:
-- Person's name (from sender info or signature)
-- Email address
-- Company name (from email domain or signature)
-- Phone number (if mentioned in signature)
-- Job title (if mentioned)
-
-Respond with JSON only:
-{
-  "name": "clean name",
-  "email": "email@domain.com",
-  "company": "Company Name" or null,
-  "phoneNumber": "+1234567890" or null,
-  "jobTitle": "Title" or null
-}
-    `.trim();
-
-    return this.withRetry(async () => {
-      const response = await this.client.chat.completions.create({
-        model: config.openai.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 300,
-        response_format: { type: 'json_object' }
-      });
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response content from OpenAI');
-      }
-
-      try {
-        const parsed = JSON.parse(content);
-        return {
-          name: parsed.name || email.from.split('@')[0],
-          email: parsed.email || email.from,
-          company: parsed.company,
-          phoneNumber: parsed.phoneNumber
-        } as ContactInfo;
-      } catch (parseError) {
-        console.error('OpenAI: Failed to parse contact info:', content);
-        // Fallback to basic extraction
-        return {
-          name: email.from.split('@')[0],
-          email: email.from
-        } as ContactInfo;
-      }
-    });
-  }
-
-  async improveEmailResponse(originalResponse: string, context: string): Promise<string> {
-    const prompt = `
-Improve this email response to make it more professional and engaging.
-
-Original response:
-${originalResponse}
-
-Context: ${context}
-
-Requirements:
-- Keep the same information and structure
-- Make it more personable and professional
-- Ensure proper grammar and punctuation
-- Maintain appropriate business tone
-- Keep it concise
-
-Return only the improved email text.
-    `.trim();
-
-    return this.withRetry(async () => {
-      const response = await this.client.chat.completions.create({
-        model: config.openai.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 500
-      });
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response content from OpenAI');
-      }
-
-      return content.trim();
-    });
-  }
-
-  async classifyEmailType(email: EmailMessage): Promise<{
-    type: 'demo_request' | 'followup' | 'question' | 'complaint' | 'other';
-    confidence: number;
-    shouldRespond: boolean;
-  }> {
-    const prompt = `
-Classify this business email and determine if it needs an automated response.
-
-Email:
-Subject: ${email.subject}
-From: ${email.from}
-Body: ${email.body}
-
-Classify as:
-- demo_request: Requesting product demo or sales meeting
-- followup: Following up on previous conversation
-- question: Asking specific questions about product/service
-- complaint: Expressing dissatisfaction or issues
-- other: General inquiry or other type
-
-Also determine if this email should receive an automated response from a sales assistant.
-
-Respond with JSON only:
-{
-  "type": "demo_request" | "followup" | "question" | "complaint" | "other",
-  "confidence": number (0.0-1.0),
-  "shouldRespond": boolean
-}
-    `.trim();
-
-    return this.withRetry(async () => {
-      const response = await this.client.chat.completions.create({
-        model: config.openai.model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 200,
-        response_format: { type: 'json_object' }
-      });
-
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response content from OpenAI');
-      }
-
-      try {
-        return JSON.parse(content);
-      } catch (parseError) {
-        console.error('OpenAI: Failed to parse classification response:', content);
-        // Return safe fallback
-        return {
-          type: 'other' as const,
-          confidence: 0.1,
-          shouldRespond: false
-        };
-      }
-    });
-  }
-
-  // Test connection to OpenAI API
-  async testConnection(): Promise<{ success: boolean; error?: string; model?: string }> {
+  async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await this.client.chat.completions.create({
+      // Test both OpenAI and calendar MCP service
+      const openaiTest = await this.client.chat.completions.create({
         model: config.openai.model,
-        messages: [{ role: 'user', content: 'Hello, this is a test message.' }],
+        messages: [{ role: 'user', content: 'Hello, this is a test.' }],
         max_tokens: 10,
-        temperature: 0
       });
 
-      return { 
-        success: true, 
-        model: response.model 
-      };
+      const calendarTest = await calendarService.testConnection();
+      
+      if (!calendarTest.success) {
+        return calendarTest;
+      }
+
+      return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error'
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
 
   /**
-   * Analyze a reply email to determine if it's a positive response and extract time preferences
+   * Legacy method: Analyze email intent (for backward compatibility)
+   */
+  async analyzeEmailIntent(email: EmailMessage): Promise<{
+    isDemoRequest: boolean;
+    confidence: number;
+    intentType: 'demo' | 'meeting' | 'call' | 'presentation' | 'unknown';
+    urgency: 'low' | 'medium' | 'high';
+    reasoning: string;
+    keywords: string[];
+  }> {
+    // Use the MCP analysis but return only the intent part
+    const mcpResult = await this.analyzeEmailAndSchedule(email);
+    
+    return {
+      isDemoRequest: mcpResult.isDemoRequest,
+      confidence: mcpResult.confidence,
+      intentType: 'demo', // Since MCP focuses on demo requests
+      urgency: 'medium', // Default value
+      reasoning: mcpResult.reasoning,
+      keywords: [], // Not provided by MCP analysis
+    };
+  }
+
+  /**
+   * Legacy method: Analyze reply for positive response (for backward compatibility)
    */
   async analyzeReplyForPositiveResponse(
     replyEmail: EmailMessage, 
@@ -489,7 +403,7 @@ Respond with JSON only:
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
-        throw new Error('No response content from OpenAI');
+        throw new Error('No response content from OpenAI MCP');
       }
 
       try {
@@ -500,30 +414,30 @@ Respond with JSON only:
           try {
             parsed.customTimeProposed.dateTime = new Date(parsed.customTimeProposed.dateTime);
           } catch (dateError) {
-            console.warn('OpenAI: Invalid date format in custom time proposal:', parsed.customTimeProposed.dateTime);
+            console.warn('OpenAI MCP: Invalid date format in custom time proposal:', parsed.customTimeProposed.dateTime);
             parsed.customTimeProposed = null;
           }
         }
         
         return parsed;
       } catch (parseError) {
-        console.error('OpenAI: Failed to parse reply analysis response:', content);
-        throw new Error('Invalid JSON response from OpenAI reply analysis');
+        console.error('OpenAI MCP: Failed to parse reply analysis response:', content);
+        throw new Error('Invalid JSON response from OpenAI MCP reply analysis');
       }
     });
   }
 
-  // Get current API usage information (if available)
   async getApiUsage(): Promise<any> {
-    // OpenAI doesn't provide usage info through the API directly
-    // This would typically be monitored through their dashboard
     return {
       model: config.openai.model,
       maxRetries: this.maxRetries,
-      baseDelay: this.baseDelay
+      baseDelay: this.baseDelay,
+      mcpToolsEnabled: true,
+      calendarFunctionsAvailable: calendarService.getMCPTools().length,
     };
   }
 }
 
 // Export singleton instance
 export const openaiService = new OpenAIService();
+

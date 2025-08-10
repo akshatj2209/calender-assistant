@@ -2,8 +2,8 @@ import { CalendarRepository } from '@/database/repositories/CalendarRepository';
 import { EmailRepository } from '@/database/repositories/EmailRepository';
 import { ScheduledResponseRepository } from '@/database/repositories/ScheduledResponseRepository';
 import { UserRepository, UserWithTokens } from '@/database/repositories/UserRepository';
-import { calendarService } from '@/services/CalendarService';
-import { GmailService } from '@/services/GmailService';
+import { calendarService } from '@/services/CalendarMCP';
+import { gmailService } from '@/services/GmailService';
 import { openaiService } from '@/services/OpenAIService';
 import { EmailMessage } from '@/types';
 import { EmailDirection, Prisma, ProcessingStatus } from '@prisma/client';
@@ -126,7 +126,7 @@ export class EmailProcessingJob {
       }
 
       // Create a user-specific Gmail service instance
-      const userGmailService = new GmailService();
+      const userGmailService = gmailService;
       
       // Set user-specific tokens
       try {
@@ -178,7 +178,77 @@ export class EmailProcessingJob {
     }
   }
 
-  private async processSingleEmail(userId: string, email: EmailMessage, userGmailService?: GmailService): Promise<void> {
+  private async processEmailWithMCP(userId: string, email: EmailMessage, emailRecord: any, user: any): Promise<void> {
+    try {
+      // Let AI analyze email and directly check calendar for available slots
+      const mcpAnalysis = await openaiService.analyzeEmailAndSchedule(email);
+      
+      if (!mcpAnalysis.isDemoRequest) {
+        console.log(`🤖 MCP-AI determined not a demo request: ${email.subject}`);
+        
+        // Check if this is a reply to one of our sent messages
+        const isReplyToOurMessage = await this.checkIfReplyToSentMessage(userId, email);
+        
+        if (isReplyToOurMessage) {
+          console.log(`📧 This appears to be a reply to our sent message: ${email.subject}`);
+          await this.processReplyToSentMessage(userId, email, emailRecord);
+        }
+        
+        await this.emailRepository.markAsProcessed(emailRecord.id, false);
+        return;
+      }
+
+      console.log(`🤖 MCP-AI Demo request detected: ${email.subject} (confidence: ${mcpAnalysis.confidence})`);
+      console.log(`🤖 MCP-AI found ${mcpAnalysis.proposedTimeSlots.length} available time slots`);
+
+      // Convert AI-found time slots to our internal format
+      const timeSlots = mcpAnalysis.proposedTimeSlots.map(slot => ({
+        start: new Date(slot.start),
+        end: new Date(slot.end),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        formatted: slot.formatted,
+      }));
+
+      // Calculate when email will be sent (1 hour delay)
+      const scheduledAt = new Date();
+      scheduledAt.setHours(scheduledAt.getHours() + 1);
+
+      console.log(`🤖 Creating MCP-scheduled response:`);
+      console.log(`🤖   - Assigned to userId: ${userId}`);
+      console.log(`🤖   - User email: ${user.email}`);
+      console.log(`🤖   - Recipient: ${mcpAnalysis.contactInfo.name} <${mcpAnalysis.contactInfo.email}>`);
+      console.log(`🤖   - Scheduled for: ${scheduledAt.toISOString()}`);
+      console.log(`🤖   - AI Generated Response Preview: ${mcpAnalysis.emailResponse.substring(0, 100)}...`);
+      console.log(`🤖   - AI Generated Response Length: ${mcpAnalysis.emailResponse.length} characters`);
+      console.log(`🤖   - AI Generated Response Full: ${JSON.stringify(mcpAnalysis.emailResponse)}`);
+
+      // Create scheduled response with AI-generated content
+      const createdResponse = await this.scheduledResponseRepository.create({
+        userId,
+        emailRecordId: emailRecord.id,
+        recipientEmail: mcpAnalysis.contactInfo.email,
+        recipientName: mcpAnalysis.contactInfo.name,
+        subject: `Re: ${email.subject}`,
+        body: mcpAnalysis.emailResponse,
+        proposedTimeSlots: timeSlots as Prisma.InputJsonValue,
+        scheduledAt,
+      });
+
+      console.log(`🤖 ✅ MCP-scheduled response created with ID: ${createdResponse.id}`);
+
+      // Mark email as processed  
+      await this.emailRepository.markAsProcessed(emailRecord.id, true);
+
+    } catch (error) {
+      console.error(`🤖 Error in MCP email processing:`, error);
+      // Mark as failed since MCP is now the primary system
+      await this.emailRepository.markAsFailed(emailRecord.id);
+      throw error;
+    }
+  }
+
+
+  private async processSingleEmail(userId: string, email: EmailMessage, userGmailService?: any): Promise<void> {
     try {
       // Check if email already exists
       const existing = await this.emailRepository.findByGmailMessageId(email.id);
@@ -257,70 +327,9 @@ export class EmailProcessingJob {
         return;
       }
 
-      // 2. AI Analysis - Check if it's a demo request (only for inbound emails)
-      const intentAnalysis = await openaiService.analyzeEmailIntent(email);
-      
-      if (!intentAnalysis.isDemoRequest) {
-        console.log(`🤖 Email is not a demo request: ${email.subject}`);
-        
-        // Check if this is a reply to one of our sent messages
-        const isReplyToOurMessage = await this.checkIfReplyToSentMessage(userId, email);
-        
-        if (isReplyToOurMessage) {
-          console.log(`📧 This appears to be a reply to our sent message: ${email.subject}`);
-          await this.processReplyToSentMessage(userId, email, emailRecord);
-        }
-        
-        await this.emailRepository.markAsProcessed(emailRecord.id, false);
-        return;
-      }
-
-      console.log(`🤖 Demo request detected: ${email.subject} (confidence: ${intentAnalysis.confidence})`);
-
-      // 3. Extract time preferences and contact info using AI
-      const timePreferences = await openaiService.extractTimePreferences(email);
-      const contactInfo = await openaiService.extractContactInfo(email);
-
-      // 4. Calculate when email will be sent (1 hour delay)
-      const scheduledAt = new Date();
-      scheduledAt.setHours(scheduledAt.getHours() + 1);
-
-      // 5. Find available time slots (starting after email send time + buffer)
-      const timeSlots = await this.findAvailableTimeSlots(userId, timePreferences, scheduledAt);
-
-      if (timeSlots.length === 0) {
-        console.log(`🤖 No available time slots found for: ${email.subject}`);
-        await this.emailRepository.markAsFailed(emailRecord.id);
-        return;
-      }
-
-      // 6. Generate response
-      const response = await this.generateResponse(email, contactInfo, timeSlots);
-
-      console.log(`🤖 Creating scheduled response:`);
-      console.log(`🤖   - Assigned to userId: ${userId}`);
-      console.log(`🤖   - User email: ${user?.email}`);
-      console.log(`🤖   - Recipient: ${contactInfo.name} <${contactInfo.email}>`);
-      console.log(`🤖   - Subject: ${response.subject}`);
-      console.log(`🤖   - Scheduled for: ${scheduledAt.toISOString()}`);
-
-      const createdResponse = await this.scheduledResponseRepository.create({
-        userId,
-        emailRecordId: emailRecord.id,
-        recipientEmail: contactInfo.email,
-        recipientName: contactInfo.name,
-        subject: response.subject,
-        body: response.body,
-        proposedTimeSlots: timeSlots as Prisma.InputJsonValue,
-        scheduledAt
-      });
-
-      console.log(`🤖 ✅ Scheduled response created with ID: ${createdResponse.id}`);
-
-      // 7. Mark email as processed
-      await this.emailRepository.markAsProcessed(emailRecord.id, true);
-
-      console.log(`🤖 Successfully processed email: ${email.subject}`);
+      // 2. AI Analysis - Use MCP-integrated AI
+      console.log(`🤖 Using AI-MCP analysis for: ${email.subject}`);
+      await this.processEmailWithMCP(userId, email, emailRecord, user!);
       
     } catch (error) {
       console.error(`🤖 Error processing email:`, error);

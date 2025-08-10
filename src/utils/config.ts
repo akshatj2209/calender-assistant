@@ -49,7 +49,7 @@ export const createAppConfig = (): AppConfig => {
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY!,
-      model: process.env.OPENAI_MODEL || 'gpt-4'
+      model: process.env.OPENAI_MODEL || 'gpt-4o'
     },
     monitoring: {
       checkIntervalMinutes: parseInt(process.env.CHECK_INTERVAL_MINUTES || '5'),

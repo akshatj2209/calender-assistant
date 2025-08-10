@@ -238,6 +238,25 @@ export interface CalendarApiResponse {
   timeMax: string;
 }
 
+// MCP-specific Types
+export interface MCPAnalysisResult {
+  isDemoRequest: boolean;
+  confidence: number;
+  contactInfo: ContactInfo;
+  proposedTimeSlots: Array<{
+    start: string;
+    end: string;
+    formatted: string;
+  }>;
+  emailResponse: string;
+  reasoning: string;
+}
+
+export interface MCPToolCall {
+  name: 'find_available_slots' | 'get_calendar_events' | 'create_calendar_event';
+  parameters: Record<string, any>;
+}
+
 // Frontend Types
 export interface DashboardData {
   metrics: MonitoringMetrics;

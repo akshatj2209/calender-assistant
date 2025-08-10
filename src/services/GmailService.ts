@@ -2,6 +2,7 @@ import { EmailMessageModel } from '@/models/EmailMessage';
 import { EmailMessage } from '@/types';
 import { google } from 'googleapis';
 import { authService } from './AuthService';
+import { userConfigService } from './UserConfigService';
 
 export interface GmailQuery {
   query?: string;
@@ -190,7 +191,7 @@ export class GmailService {
     return this.searchEmails(searchQuery, maxResults);
   }
 
-  async sendEmail(options: EmailSendOptions): Promise<any> {
+  async sendEmail(options: EmailSendOptions, userId: string): Promise<any> {
     await this.ensureAuthenticated();
 
     const { to, subject, body, replyToMessageId, threadId, isHtml = false } = options;
@@ -212,14 +213,15 @@ export class GmailService {
           console.warn('Gmail: Could not retrieve original message for proper threading:', error);
         }
       }
+      const config = await userConfigService.getUserConfig(userId);
 
       // Create email message in RFC 2822 format
       const headers = [
+        `From: ${config?.salesName} <${config?.salesEmail}>`,
         `To: ${to}`,
         `Subject: ${subject}`,
         'MIME-Version: 1.0',
-        `Content-Type: text/${isHtml ? 'html' : 'plain'}; charset=utf-8`,
-        'Content-Transfer-Encoding: base64'
+        `Content-Type: text/${isHtml ? 'html' : 'plain'}; charset=utf-8`
       ];
 
       if (originalMessageId) {
@@ -233,12 +235,17 @@ export class GmailService {
         body
       ].join('\n');
 
-      // Encode email in base64url format
-      const encodedEmail = Buffer.from(email)
+      console.log('Gmail: Raw email content:', email.substring(0, 200) + '...');
+      console.log('Gmail: Body parameter:', body?.substring(0, 100) + '...');
+
+      // Encode email in base64url format (Gmail API requirement)
+      const encodedEmail = Buffer.from(email, 'utf8')
         .toString('base64')
         .replace(/\+/g, '-')
         .replace(/\//g, '_')
         .replace(/=+$/, '');
+
+      console.log('Gmail: Encoded email length:', encodedEmail.length);
 
       const requestBody: any = {
         raw: encodedEmail
@@ -269,11 +276,12 @@ export class GmailService {
   }
 
   async sendDemoResponse(
+    userId: string,
     recipientEmail: string, 
     recipientName: string,
     proposedTimes: Date[],
     originalMessageId?: string,
-    originalThreadId?: string
+    originalThreadId?: string,
   ): Promise<any> {
     const timeFormatter = new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
@@ -311,7 +319,7 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
       body,
       replyToMessageId: originalMessageId,
       threadId: originalThreadId
-    });
+    }, userId);
   }
 
   async markAsRead(messageId: string): Promise<void> {

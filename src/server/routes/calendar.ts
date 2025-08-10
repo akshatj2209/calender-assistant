@@ -1,6 +1,6 @@
-import express from 'express';
-import { calendarService } from '@/services/CalendarService';
 import { authService } from '@/services/AuthService';
+import { calendarService } from '@/services/CalendarMCP';
+import express from 'express';
 
 const router = express.Router();
 
@@ -28,7 +28,11 @@ async function requireAuth(req: express.Request, res: express.Response, next: ex
 router.get('/upcoming', requireAuth, async (req, res) => {
   try {
     const days = parseInt(req.query.days as string) || 7;
-    const events = await calendarService.getUpcomingEvents(days);
+    const events = await calendarService.getEvents('primary', {
+      timeMin: new Date(),
+      timeMax: new Date(Date.now() + days * 24 * 60 * 60 * 1000),
+      orderBy: 'startTime'
+    });
     
     res.json({
       success: true,
