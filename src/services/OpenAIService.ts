@@ -427,6 +427,91 @@ Respond with JSON only:
     });
   }
 
+  async analyzeReplyForCalendarEvent(email: EmailMessage, scheduledResponse: any): Promise<{
+    shouldCreateEvent: boolean;
+    selectedTimeSlot?: { start: string; end: string };
+    reason?: string;
+  }> {
+    try {
+      const proposedSlots = scheduledResponse.proposedTimeSlots as Array<{
+        start: string;
+        end: string;
+        formatted: string;
+      }>;
+
+      const prompt = `
+You are analyzing a reply to a scheduled response that proposed meeting time slots. 
+Determine if this reply accepts one of the proposed time slots and if a calendar event should be created.
+
+ORIGINAL PROPOSED TIME SLOTS:
+${proposedSlots.map((slot, i) => `${i + 1}. ${slot.formatted} (${slot.start} to ${slot.end})`).join('\n')}
+
+REPLY EMAIL:
+From: ${email.from}
+Subject: ${email.subject}
+Body: ${email.body}
+
+Please analyze if:
+1. The reply explicitly or implicitly accepts one of the proposed time slots
+2. Which specific time slot is being accepted (if any)
+3. Whether a calendar event should be created
+
+Respond in this exact JSON format:
+{
+  "shouldCreateEvent": boolean,
+  "selectedTimeSlot": { "start": "ISO_DATE", "end": "ISO_DATE" } or null,
+  "reason": "explanation of your decision"
+}
+`;
+
+      const response = await this.withRetry(async () => {
+        return this.client.chat.completions.create({
+          model: config.openai.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an AI assistant that analyzes email replies to determine if calendar events should be created based on accepted meeting time slots. Always respond with valid JSON.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 500,
+          response_format: { type: 'json_object' }
+        });
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) {
+        throw new Error('No response content from OpenAI');
+      }
+
+      // Parse JSON response
+      let analysis;
+      try {
+        analysis = JSON.parse(content);
+      } catch (parseError) {
+        console.error('OpenAI MCP: Failed to parse analysis JSON:', content);
+        return {
+          shouldCreateEvent: false,
+          reason: 'Failed to parse AI analysis'
+        };
+      }
+
+      console.log('OpenAI MCP: Reply analysis result:', analysis);
+      return analysis;
+
+    } catch (error) {
+      console.error('OpenAI MCP: Error analyzing reply for calendar event:', error);
+      return {
+        shouldCreateEvent: false,
+        reason: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
   async getApiUsage(): Promise<any> {
     return {
       model: config.openai.model,

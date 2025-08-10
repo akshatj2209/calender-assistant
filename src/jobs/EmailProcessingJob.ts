@@ -55,12 +55,14 @@ export class EmailProcessingJob {
   private emailRepository: EmailRepository;
   private userRepository: UserRepository;
   private scheduledResponseRepository: ScheduledResponseRepository;
+  private calendarRepository: CalendarRepository;
   private isRunning: boolean = false;
 
   constructor() {
     this.emailRepository = new EmailRepository();
     this.userRepository = new UserRepository();
     this.scheduledResponseRepository = new ScheduledResponseRepository();
+    this.calendarRepository = new CalendarRepository();
     
     // Run every 5 minutes: '0 */5 * * * *'
     this.cronJob = new CronJob('0 */5 * * * *', () => {
@@ -179,25 +181,17 @@ export class EmailProcessingJob {
   }
 
   private async processEmailWithMCP(userId: string, email: EmailMessage, emailRecord: any, user: any): Promise<void> {
-    try {
-      // Let AI analyze email and directly check calendar for available slots
-      const mcpAnalysis = await openaiService.analyzeEmailAndSchedule(email);
-      
-      if (!mcpAnalysis.isDemoRequest) {
-        console.log(`🤖 MCP-AI determined not a demo request: ${email.subject}`);
-        
-        // Check if this is a reply to one of our sent messages
-        const isReplyToOurMessage = await this.checkIfReplyToSentMessage(userId, email);
-        
-        if (isReplyToOurMessage) {
-          console.log(`📧 This appears to be a reply to our sent message: ${email.subject}`);
-          await this.processReplyToSentMessage(userId, email, emailRecord);
-        }
-        
+    try { 
+      const sentScheduledResponses = await this.scheduledResponseRepository.findSentResponsesByThreadId(email.threadId);
+      if (sentScheduledResponses.length > 0) {
+        // This is a reply to a sent scheduled response, check if we need to create calendar event
+        await this.processReplyToScheduledResponse(userId, email, sentScheduledResponses);
         await this.emailRepository.markAsProcessed(emailRecord.id, false);
         return;
-      }
-
+      }  
+      // Let AI analyze email and directly check calendar for available slots
+      const mcpAnalysis = await openaiService.analyzeEmailAndSchedule(email);  
+      
       console.log(`🤖 MCP-AI Demo request detected: ${email.subject} (confidence: ${mcpAnalysis.confidence})`);
       console.log(`🤖 MCP-AI found ${mcpAnalysis.proposedTimeSlots.length} available time slots`);
 
@@ -253,7 +247,13 @@ export class EmailProcessingJob {
       // Check if email already exists
       const existing = await this.emailRepository.findByGmailMessageId(email.id);
       if (existing) {
-        console.log(`🤖 Email ${email.id} already processed, skipping`);
+        // Check if this might be a reply to a scheduled response that needs calendar event creation
+        const sentScheduledResponses = await this.scheduledResponseRepository.findSentResponsesByThreadId(email.threadId);
+        if (sentScheduledResponses.length > 0) {
+          await this.processReplyToScheduledResponse(userId, email, sentScheduledResponses);
+        } else {
+          console.log(`🤖 Email ${email.id} already processed, skipping`);
+        }
         return;
       }
       let messageIdHeader: string | null = null;
@@ -727,6 +727,91 @@ Sales Team`;
   // Manual trigger for testing
   async triggerProcessing(): Promise<void> {
     return this.processEmails();
+  }
+
+  private async processReplyToScheduledResponse(
+    userId: string,
+    email: EmailMessage,
+    sentScheduledResponses: any[]
+  ): Promise<void> {
+    try {
+      console.log(`🤖 Processing reply to scheduled response for email: ${email.subject}`);
+      
+      // Extract attendee email from the reply
+      const attendeeEmail = email.from.includes('<') ? email.from.split('<')[1].replace('>', '') : email.from;
+      
+      // Check if calendar event already exists for this thread and attendee
+      const existingEvent = await this.calendarRepository.findEventByThreadAndAttendee(
+        userId, 
+        email.threadId, 
+        attendeeEmail
+      );
+      
+      if (existingEvent) {
+        console.log(`🤖 ✅ Calendar event already exists for this thread and attendee: ${existingEvent.googleEventId}`);
+        console.log(`🤖 Event details: ${existingEvent.summary} on ${existingEvent.startTime.toISOString()}`);
+        return;
+      }
+      
+      // Use AI to analyze if this reply accepts one of the proposed time slots
+      const user = await this.userRepository.findById(userId);
+      if (!user) {
+        console.error(`🤖 User not found: ${userId}`);
+        return;
+      }
+
+      // Get the most recent scheduled response
+      const latestScheduledResponse = sentScheduledResponses[0];
+      if (!latestScheduledResponse || !latestScheduledResponse.proposedTimeSlots) {
+        console.log(`🤖 No valid scheduled response with time slots found`);
+        return;
+      }
+
+      console.log(`🤖 Analyzing reply for calendar event creation...`);
+      
+      // Use AI to analyze the reply and determine if a calendar event should be created
+      const mcpAnalysis = await openaiService.analyzeReplyForCalendarEvent(email, latestScheduledResponse);
+      
+      if (mcpAnalysis.shouldCreateEvent && mcpAnalysis.selectedTimeSlot) {
+        console.log(`🤖 AI determined calendar event should be created`);
+        
+        // Create calendar event using the selected time slot
+        const calendarEvent = await calendarService.create_calendar_event({
+          summary: `Meeting with ${email.from.split('<')[0].trim() || 'Guest'}`,
+          description: `Meeting scheduled based on email conversation`,
+          startDateTime: mcpAnalysis.selectedTimeSlot.start,
+          endDateTime: mcpAnalysis.selectedTimeSlot.end,
+          attendeeEmail: attendeeEmail,
+          attendeeName: email.from.split('<')[0].trim() || email.from
+        });
+
+        console.log(`🤖 ✅ Calendar event created: ${calendarEvent.id}`);
+        
+        // Store calendar event record in database
+        // We need to find the email record for this reply email, not use the scheduled response ID
+        const replyEmailRecord = await this.emailRepository.findByGmailMessageId(email.id);
+        
+        await this.calendarRepository.create({
+          userId,
+          emailRecordId: replyEmailRecord?.id, // Use the reply email's record ID, can be null
+          googleEventId: calendarEvent.id!,
+          calendarId: 'primary',
+          summary: calendarEvent.summary,
+          startTime: new Date(mcpAnalysis.selectedTimeSlot.start),
+          endTime: new Date(mcpAnalysis.selectedTimeSlot.end),
+          timezone: calendarEvent.start.timezone || 'UTC',
+          attendeeEmail: attendeeEmail,
+          attendeeName: email.from.split('<')[0].trim() || email.from
+        });
+
+        console.log(`🤖 ✅ Calendar event record saved to database`);
+      } else {
+        console.log(`🤖 AI determined no calendar event needed: ${mcpAnalysis.reason || 'No clear time slot acceptance'}`);
+      }
+
+    } catch (error) {
+      console.error(`🤖 Error processing reply to scheduled response:`, error);
+    }
   }
 
   getStatus(): { isRunning: boolean; isStarted: boolean; lastRun?: Date; nextRun?: Date } {

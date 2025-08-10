@@ -295,6 +295,21 @@ export class CalendarService {
     } = params;
 
     try {
+      // Get the current authenticated user's email to add them as an attendee
+      let currentUserEmail: string | undefined;
+      try {
+        const authClient = authService.getAuthenticatedClient();
+        if (authClient && authClient.credentials) {
+          // Get user info using the authenticated client
+          const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
+          const userInfoResponse = await oauth2.userinfo.get();
+          currentUserEmail = userInfoResponse.data.email || undefined;
+          console.log('Calendar MCP: Got current user email:', currentUserEmail);
+        }
+      } catch (userError) {
+        console.warn('Calendar MCP: Could not get current user email:', userError);
+      }
+
       const eventData: any = {
         summary,
         description: description || `Meeting scheduled via AI assistant`,
@@ -317,13 +332,29 @@ export class CalendarService {
         },
       };
 
+      // Build attendees list - always include both the external attendee and the calendar owner
+      const attendees: Array<{ email: string; displayName?: string; responseStatus?: string }> = [];
+      
+      // Add external attendee if provided
       if (attendeeEmail) {
-        eventData.attendees = [
-          {
-            email: attendeeEmail,
-            displayName: attendeeName || attendeeEmail,
-          },
-        ];
+        attendees.push({
+          email: attendeeEmail,
+          displayName: attendeeName || attendeeEmail,
+          responseStatus: 'needsAction'
+        });
+      }
+      
+      // Add the calendar owner (current user) as an attendee
+      if (currentUserEmail) {
+        attendees.push({
+          email: currentUserEmail,
+          displayName: 'You',
+          responseStatus: 'accepted' // Auto-accept for the calendar owner
+        });
+      }
+
+      if (attendees.length > 0) {
+        eventData.attendees = attendees;
       }
 
       const response = await this.calendar.events.insert({
@@ -334,6 +365,7 @@ export class CalendarService {
       });
 
       console.log('Calendar MCP: Event created successfully:', response.data.id);
+      console.log('Calendar MCP: Attendees added:', attendees.map(a => a.email).join(', '));
       return CalendarEventModel.fromGoogleCalendarEvent(response.data);
     } catch (error) {
       console.error('Calendar MCP: Failed to create event:', error);

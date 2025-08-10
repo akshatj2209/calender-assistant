@@ -253,6 +253,25 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     });
   }
 
+  async findEventByThreadAndAttendee(
+    userId: string, 
+    threadId: string, 
+    attendeeEmail: string
+  ): Promise<CalendarEventRecord | null> {
+    return this.prisma.calendarEventRecord.findFirst({
+      where: {
+        userId,
+        attendeeEmail,
+        emailRecord: {
+          gmailThreadId: threadId
+        }
+      },
+      include: {
+        emailRecord: true
+      }
+    });
+  }
+
 
   async markEventCancelled(id: string): Promise<CalendarEventRecord> {
     return this.update(id, {

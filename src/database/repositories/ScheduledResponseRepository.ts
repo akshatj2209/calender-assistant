@@ -153,4 +153,19 @@ export class ScheduledResponseRepository extends BaseRepository<ScheduledRespons
       orderBy: { createdAt: 'desc' }
     });
   }
+
+  async findSentResponsesByThreadId(threadId: string): Promise<ScheduledResponse[]> {
+    return this.prisma.scheduledResponse.findMany({
+      where: {
+        status: ResponseStatus.SENT,
+        emailRecord: {
+          gmailThreadId: threadId
+        }
+      },
+      orderBy: { sentAt: 'desc' },
+      include: {
+        emailRecord: true
+      }
+    });
+  }
 }
