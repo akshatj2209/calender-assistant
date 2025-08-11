@@ -118,26 +118,19 @@ DEFAULT_TIMEZONE=America/Los_Angeles
 
 ### Development Mode
 
-Start both frontend and backend:
-```bash
-npm run dev
-```
+You need to start the backend and frontend servers separately in different terminals:
 
-This will start:
-- **Backend server** on `http://localhost:3001`
-- **Frontend application** on `http://localhost:3000`
-
-### Start Components Separately
-
-Backend only:
+**Terminal 1 - Backend server:**
 ```bash
 npm run dev:backend
 ```
+This starts the backend server on `http://localhost:3001`
 
-Frontend only:
+**Terminal 2 - Frontend application:**
 ```bash
 npm run dev:frontend
 ```
+This starts the frontend application on `http://localhost:3000`
 
 ### Production Mode
 
