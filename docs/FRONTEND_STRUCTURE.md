@@ -1,156 +1,207 @@
 # Frontend Structure (Next.js)
 
 ## Overview
-The frontend provides a clean, intuitive dashboard for monitoring and configuring the Gmail Calendar Assistant. Built with Next.js 14, TypeScript, and Tailwind CSS for a modern, responsive experience.
+The frontend provides a clean, intuitive dashboard for monitoring and configuring the Gmail Calendar Assistant. Built with Next.js 13 using Pages Router, TypeScript, and Tailwind CSS for a modern, responsive experience.
 
 ## Application Structure
 
 ```
 frontend/
 ├── src/
-│   ├── app/                    # App Router (Next.js 14)
-│   │   ├── layout.tsx         # Root layout
-│   │   ├── page.tsx           # Dashboard home
-│   │   ├── dashboard/         # Main dashboard views
-│   │   ├── settings/          # Configuration pages
-│   │   ├── auth/              # Authentication flows
-│   │   └── api/               # API route handlers
-│   ├── components/            # Reusable UI components
-│   │   ├── ui/               # Base UI components
-│   │   ├── dashboard/        # Dashboard-specific components
-│   │   ├── forms/            # Form components
-│   │   └── layout/           # Layout components
-│   ├── hooks/                # Custom React hooks
-│   ├── utils/                # Utility functions
-│   ├── types/                # TypeScript type definitions
-│   └── lib/                  # External library configurations
-├── public/                   # Static assets
-└── styles/                   # Global styles
+│   ├── pages/                 # Next.js Pages Router
+│   │   ├── _app.tsx          # App configuration
+│   │   ├── index.tsx         # Dashboard home
+│   │   ├── login.tsx         # Login page
+│   │   ├── scheduled-responses.tsx # Scheduled responses page
+│   │   └── auth/             # Authentication flows
+│   │       └── callback.tsx  # OAuth callback
+│   ├── components/           # Reusable UI components
+│   │   ├── Auth/            # Authentication components
+│   │   │   └── ProtectedRoute.tsx
+│   │   ├── Calendar/        # Calendar components
+│   │   │   ├── CalendarView.tsx
+│   │   │   └── EventCard.tsx
+│   │   ├── Dashboard/       # Dashboard components
+│   │   │   ├── Dashboard.tsx
+│   │   │   └── StatsCards.tsx
+│   │   ├── Email/          # Email management
+│   │   │   ├── EmailCard.tsx
+│   │   │   └── EmailList.tsx
+│   │   ├── Layout/         # Layout components
+│   │   │   └── Header.tsx
+│   │   ├── ScheduledResponses/ # Response management
+│   │   │   ├── ScheduledResponseCard.tsx
+│   │   │   ├── ScheduledResponseEditModal.tsx
+│   │   │   └── ScheduledResponsesList.tsx
+│   │   └── UI/             # Base UI components
+│   │       └── LoadingSpinner.tsx
+│   ├── hooks/              # Custom React hooks
+│   │   ├── useApi.ts       # API client hook
+│   │   ├── useAuth.ts      # Authentication hook
+│   │   └── useUser.ts      # User management hook
+│   ├── types/              # TypeScript type definitions
+│   │   ├── api.ts          # API response types
+│   │   ├── calendar.ts     # Calendar types
+│   │   ├── dashboard.ts    # Dashboard types
+│   │   ├── email.ts        # Email types
+│   │   ├── index.ts        # Main types export
+│   │   └── user.ts         # User types
+│   ├── styles/             # Styling
+│   │   └── globals.css     # Global styles with Tailwind
+│   └── utils/              # Utility functions
+├── public/                 # Static assets
+├── next.config.js          # Next.js configuration
+├── tailwind.config.js      # Tailwind CSS configuration
+└── tsconfig.json           # TypeScript configuration
 ```
 
 ## Core Pages & Features
 
-### 1. Dashboard Overview (`/dashboard`)
+### 1. Dashboard Overview (`/` - index.tsx)
 **Purpose**: Real-time monitoring of email processing and system status
 
 ```typescript
-interface DashboardProps {
-  metrics: MonitoringMetrics;
-  recentActivity: RecentActivity[];
-  systemStatus: SystemStatus;
-}
-
 const Dashboard = () => {
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const api = useApi();
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Key Metrics Cards */}
-      <MetricsOverview />
-      
-      {/* System Status */}
-      <SystemStatusCard />
-      
-      {/* Recent Activity Feed */}
-      <RecentActivityFeed />
-      
-      {/* Email Processing Chart */}
-      <EmailProcessingChart />
-      
-      {/* Response Rate Analytics */}
-      <ResponseRateChart />
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <main className="container mx-auto py-6 px-4">
+        <h1 className="text-3xl font-bold mb-8">Gmail Assistant Dashboard</h1>
+        
+        <StatsCards />
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+          <EmailList />
+          <CalendarView />
+        </div>
+      </main>
     </div>
   );
 };
 ```
 
 #### Key Components:
-- **MetricsOverview**: Email stats, response rates, success metrics
-- **SystemStatusCard**: API connection status, uptime, health checks
-- **RecentActivityFeed**: Live feed of processed emails and responses
-- **EmailProcessingChart**: Visualize email volume over time
-- **ResponseRateChart**: Track response success rates
+- **StatsCards**: Display email processing statistics and metrics
+- **EmailList**: Show recent processed emails with status indicators
+- **CalendarView**: Display upcoming calendar events
+- **Header**: Navigation and user authentication status
 
-### 2. Email Monitoring (`/dashboard/emails`)
-**Purpose**: Detailed view of email processing and management
+### 2. Scheduled Responses (`/scheduled-responses`)
+**Purpose**: Manage and monitor scheduled email responses
 
 ```typescript
-const EmailMonitoring = () => {
-  const [emails, setEmails] = useState<EmailMessage[]>([]);
-  const [filter, setFilter] = useState<EmailFilter>({});
+const ScheduledResponsesPage = () => {
+  const [responses, setResponses] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   return (
-    <div className="space-y-6">
-      {/* Email Filters */}
-      <EmailFilters onFilterChange={setFilter} />
-      
-      {/* Email List */}
-      <EmailList 
-        emails={emails}
-        onReprocess={handleReprocess}
-        onMarkProcessed={handleMarkProcessed}
-      />
-      
-      {/* Email Detail Modal */}
-      <EmailDetailModal />
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <main className="container mx-auto py-6 px-4">
+        <h1 className="text-2xl font-bold mb-6">Scheduled Responses</h1>
+        
+        <ScheduledResponsesList 
+          responses={responses}
+          onEdit={handleEdit}
+          onCancel={handleCancel}
+        />
+        
+        <ScheduledResponseEditModal />
+      </main>
     </div>
   );
 };
 ```
 
 #### Features:
-- **Email List**: Sortable, filterable list of processed emails
-- **Status Indicators**: Visual status (processed, pending, error)
-- **Manual Reprocessing**: Admin can reprocess failed emails
-- **Email Preview**: View original email content and parsed data
+- **ScheduledResponsesList**: Display all scheduled email responses
+- **Response Status**: Draft, scheduled, sent, cancelled status indicators
+- **Edit Modal**: Modify response content and timing before sending
+- **Response Management**: Cancel or reschedule pending responses
 
-### 3. Settings & Configuration (`/settings`)
-**Purpose**: Configure system behavior and business rules
-
+### 3. Authentication Pages
+#### Login Page (`/login`)
 ```typescript
-const Settings = () => {
+const LoginPage = () => {
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* Business Rules Configuration */}
-      <BusinessRulesForm />
-      
-      {/* Email Templates */}
-      <EmailTemplatesForm />
-      
-      {/* API Configuration */}
-      <ApiConfigurationForm />
-      
-      {/* Notification Settings */}
-      <NotificationSettingsForm />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold">Gmail Calendar Assistant</h2>
+          <p className="mt-2 text-gray-600">Sign in with your Google account</p>
+        </div>
+        
+        <GoogleOAuthButton />
+      </div>
     </div>
   );
 };
 ```
 
-#### Configuration Sections:
-- **Business Rules**: Working hours, buffer times, meeting preferences
-- **Email Templates**: Customize response templates
-- **API Settings**: Google API credentials, OpenAI configuration
-- **Notifications**: Alert preferences and thresholds
+#### OAuth Callback (`/auth/callback`)
+```typescript
+const AuthCallback = () => {
+  const router = useRouter();
+  const { code } = router.query;
+  
+  useEffect(() => {
+    if (code) {
+      handleAuthCallback(code);
+    }
+  }, [code]);
+  
+  return <div>Processing authentication...</div>;
+};
+```
 
-### 4. Authentication (`/auth`)
-**Purpose**: Secure access and Google OAuth integration
+#### Features:
+- **Google OAuth Integration**: Secure authentication with Google accounts
+- **Automatic Redirection**: Redirect to dashboard after successful login
+- **Error Handling**: Display authentication errors gracefully
+
+## Custom Hooks
+
+### useApi Hook
+**Purpose**: Centralized API client for all backend communication
 
 ```typescript
-const AuthPage = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Gmail Calendar Assistant</CardTitle>
-          <CardDescription>
-            Connect your Google account to get started
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <GoogleOAuthButton />
-        </CardContent>
-      </Card>
-    </div>
-  );
+const useApi = () => {
+  const baseUrl = 'http://localhost:3001';
+  
+  return {
+    users: {
+      findOrCreate: (userData) => request('/api/users/find-or-create', { method: 'POST', body: userData }),
+      getById: (id) => request(`/api/users/${id}`)
+    },
+    emails: {
+      getStats: (params) => request('/api/emails/stats', { params }),
+      search: (params) => request('/api/emails', { params })
+    },
+    calendarEvents: {
+      getStats: (params) => request('/api/calendar-events/stats', { params }),
+      getUpcoming: (params) => request('/api/calendar-events/upcoming', { params })
+    }
+  };
+};
+```
+
+### useUser Hook
+**Purpose**: User session management and automatic user creation
+
+```typescript
+const useUser = () => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    initializeUser();
+  }, []);
+  
+  return { user, loading, setUser };
 };
 ```
 

@@ -1,23 +1,5 @@
 import React from 'react';
-
-interface CalendarEvent {
-  id: string;
-  summary: string;
-  description?: string;
-  startTime: string;
-  endTime: string;
-  timezone: string;
-  attendeeEmail: string;
-  attendeeName?: string;
-  isDemo: boolean;
-  status: 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
-  meetingType: string;
-  emailRecord?: {
-    id: string;
-    subject: string;
-    from: string;
-  };
-}
+import type { CalendarEvent } from '../../types/calendar';
 
 interface EventCardProps {
   event: CalendarEvent;

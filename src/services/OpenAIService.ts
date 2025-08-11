@@ -1,20 +1,7 @@
-import { ContactInfo, EmailMessage } from '@/types';
+import { ContactInfo, EmailMessage, MCPAnalysisResult } from '@/types';
 import { config } from '@/utils/config';
 import OpenAI from 'openai';
 import { calendarService } from './CalendarMCP';
-
-export interface MCPAnalysisResult {
-  isDemoRequest: boolean;
-  confidence: number;
-  contactInfo: ContactInfo;
-  proposedTimeSlots: Array<{
-    start: string;
-    end: string;
-    formatted: string;
-  }>;
-  emailResponse: string;
-  reasoning: string;
-}
 
 /**
  * OpenAI service with MCP-style function calling for calendar integration
@@ -125,7 +112,6 @@ Respond with a JSON object:
         throw new Error('No response from OpenAI MCP');
       }
 
-      // Handle function calls if AI decided to use calendar tools
       if (message.tool_calls && message.tool_calls.length > 0) {
         console.log(`OpenAI MCP: AI is calling ${message.tool_calls.length} calendar tools`);
         
@@ -167,7 +153,6 @@ Respond with a JSON object:
           }
         }
 
-        // Send function results back to AI for final response generation
         const messagesWithFunctions = [
           { role: 'user' as const, content: prompt },
           message,
@@ -204,7 +189,6 @@ Respond with a JSON object:
           throw new Error('Invalid JSON response from OpenAI MCP analysis');
         }
       } else {
-        // No tool calls - AI determined it's not a demo request or doesn't need calendar data
         const content = message.content;
         if (!content) {
           throw new Error('No response content from OpenAI MCP');
@@ -315,16 +299,15 @@ Use the create_calendar_event function to create this meeting.
     reasoning: string;
     keywords: string[];
   }> {
-    // Use the MCP analysis but return only the intent part
     const mcpResult = await this.analyzeEmailAndSchedule(email);
     
     return {
       isDemoRequest: mcpResult.isDemoRequest,
       confidence: mcpResult.confidence,
-      intentType: 'demo', // Since MCP focuses on demo requests
-      urgency: 'medium', // Default value
+      intentType: 'demo',
+      urgency: 'medium',
       reasoning: mcpResult.reasoning,
-      keywords: [], // Not provided by MCP analysis
+      keywords: []
     };
   }
 
@@ -409,7 +392,6 @@ Respond with JSON only:
       try {
         const parsed = JSON.parse(content);
         
-        // Convert customTimeProposed.dateTime to Date object if present
         if (parsed.customTimeProposed?.dateTime) {
           try {
             parsed.customTimeProposed.dateTime = new Date(parsed.customTimeProposed.dateTime);
@@ -488,7 +470,6 @@ Respond in this exact JSON format:
         throw new Error('No response content from OpenAI');
       }
 
-      // Parse JSON response
       let analysis;
       try {
         analysis = JSON.parse(content);

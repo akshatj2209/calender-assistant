@@ -1,20 +1,5 @@
 import { useCallback } from 'react';
-
-interface ApiResponse<T = any> {
-  data: T;
-  status: number;
-  statusText: string;
-}
-
-interface ApiError {
-  message: string;
-  status?: number;
-  response?: {
-    data?: {
-      error?: string;
-    };
-  };
-}
+import type { ApiResponse, ApiError } from '../types/api';
 
 class ApiClient {
   private baseURL: string;

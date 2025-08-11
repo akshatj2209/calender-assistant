@@ -1,5 +1,12 @@
 // Core data models and interfaces for the Gmail Calendar Assistant
 
+// Re-export specialized types
+export * from './gmail';
+export * from './calendar-mcp';
+export * from './validation';
+export * from './repository';
+export * from './jobs';
+
 export interface EmailMessage {
   id: string;
   threadId: string;
@@ -34,7 +41,7 @@ export interface TimePreference {
   timeRange?: 'morning' | 'afternoon' | 'evening' | 'flexible';
   specificDates?: Date[];
   timezone?: string;
-  duration?: number; // in minutes
+  duration?: number;
   avoidTimes?: TimeSlot[];
 }
 
@@ -126,15 +133,15 @@ export interface ConferenceData {
 
 export interface BusinessRules {
   businessHours: {
-    start: string; // HH:mm format
-    end: string;   // HH:mm format
+    start: string;
+    end: string;
   };
   workingDays: DayOfWeek[];
-  meetingDuration: number; // minutes
-  bufferTime: number; // minutes
-  travelBufferTime: number; // minutes
+  meetingDuration: number;
+  bufferTime: number;
+  travelBufferTime: number;
   maxLookaheadDays: number;
-  minAdvanceNotice: number; // hours
+  minAdvanceNotice: number;
   timezone: string;
 }
 
@@ -157,36 +164,6 @@ export interface AppConfig {
   businessRules: BusinessRules;
 }
 
-export interface ProcessingResult {
-  success: boolean;
-  message: string;
-  emailsProcessed: number;
-  responsesGenerated: number;
-  errors: ProcessingError[];
-}
-
-export interface ProcessingError {
-  type: 'gmail_api' | 'calendar_api' | 'openai_api' | 'parsing' | 'validation';
-  message: string;
-  emailId?: string;
-  timestamp: Date;
-  retryable: boolean;
-}
-
-export interface MonitoringMetrics {
-  totalEmailsProcessed: number;
-  demoRequestsDetected: number;
-  responsesGenerated: number;
-  successRate: number;
-  averageResponseTime: number;
-  apiUsage: {
-    gmail: number;
-    calendar: number;
-    openai: number;
-  };
-  errors: ProcessingError[];
-  lastProcessedAt?: Date;
-}
 
 // Enums
 export enum DayOfWeek {
@@ -217,26 +194,6 @@ export enum ProcessingStatus {
   SKIPPED = 'skipped',
 }
 
-// API Response Types
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  timestamp: Date;
-}
-
-export interface GmailApiResponse {
-  messages: EmailMessage[];
-  nextPageToken?: string;
-  resultSizeEstimate: number;
-}
-
-export interface CalendarApiResponse {
-  events: CalendarEvent[];
-  nextPageToken?: string;
-  timeMin: string;
-  timeMax: string;
-}
 
 // MCP-specific Types
 export interface MCPAnalysisResult {
@@ -257,49 +214,7 @@ export interface MCPToolCall {
   parameters: Record<string, any>;
 }
 
-// Frontend Types
-export interface DashboardData {
-  metrics: MonitoringMetrics;
-  recentActivity: RecentActivity[];
-  systemStatus: SystemStatus;
-  configuration: Partial<AppConfig>;
-}
 
-export interface RecentActivity {
-  id: string;
-  type: 'email_received' | 'demo_detected' | 'response_sent' | 'meeting_scheduled' | 'error';
-  description: string;
-  timestamp: Date;
-  status: 'success' | 'warning' | 'error';
-  metadata?: Record<string, any>;
-}
-
-export interface SystemStatus {
-  isRunning: boolean;
-  lastCheck: Date;
-  gmailConnection: 'connected' | 'disconnected' | 'error';
-  calendarConnection: 'connected' | 'disconnected' | 'error';
-  openaiConnection: 'connected' | 'disconnected' | 'error';
-  uptime: number; // seconds
-}
-
-// Validation Schemas (for runtime validation)
-export interface ValidationSchema {
-  email: {
-    maxSubjectLength: number;
-    maxBodyLength: number;
-    requiredFields: string[];
-  };
-  timeSlot: {
-    minDurationMinutes: number;
-    maxDurationMinutes: number;
-    maxAdvanceDays: number;
-  };
-  response: {
-    maxBodyLength: number;
-    requiredSections: string[];
-  };
-}
 
 // Utility Types
 export type DeepPartial<T> = {

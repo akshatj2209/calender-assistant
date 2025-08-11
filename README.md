@@ -29,12 +29,13 @@ An AI-powered calendar assistant that monitors Gmail for demo requests and autom
 ### Backend
 - **Node.js** + **TypeScript** - Runtime and language
 - **Express.js** - Web framework
+- **Prisma** - Database ORM
 - **Google APIs** - Gmail and Calendar integration
 - **OpenAI API** - Natural language processing
 - **Jest** - Testing framework
 
 ### Frontend
-- **Next.js 14** - React framework with App Router
+- **Next.js 14** - React framework
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Styling
 - **React Hooks** - State management
@@ -42,11 +43,12 @@ An AI-powered calendar assistant that monitors Gmail for demo requests and autom
 ## 📋 Prerequisites
 
 - Node.js 18+ 
+- PostgreSQL database
 - Google Cloud Console account
 - OpenAI API account
 - Gmail account for monitoring
 
-## 🚀 Quick Start
+## 🚀 Setup Instructions
 
 ### 1. Clone and Install Dependencies
 
@@ -56,7 +58,23 @@ cd gmail-assistant
 npm install
 ```
 
-### 2. Environment Setup
+### 2. Database Setup
+
+```bash
+# Start database (using Docker)
+npm run docker:up
+
+# Generate Prisma client
+npm run db:generate
+
+# Run database migrations
+npm run db:migrate
+
+# Seed the database (optional)
+npm run db:seed
+```
+
+### 3. Environment Setup
 
 Copy the environment template:
 ```bash
@@ -65,6 +83,9 @@ cp .env.example .env
 
 Configure your `.env` file:
 ```env
+# Database Configuration
+DATABASE_URL="postgresql://user:password@localhost:5432/gmail_assistant"
+
 # Google API Configuration
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
@@ -84,7 +105,7 @@ COMPANY_NAME="Your Company"
 DEFAULT_TIMEZONE=America/Los_Angeles
 ```
 
-### 3. Google API Setup
+### 4. Google API Setup
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select existing one
@@ -93,18 +114,40 @@ DEFAULT_TIMEZONE=America/Los_Angeles
 5. Add authorized redirect URIs: `http://localhost:3000/auth/callback`
 6. Download credentials and update your `.env` file
 
-### 4. Run the Application
+## 🚀 Running the Application
 
-Development mode:
+### Development Mode
+
+Start both frontend and backend:
 ```bash
 npm run dev
 ```
 
 This will start:
-- Backend server on `http://localhost:3001`
-- Frontend application on `http://localhost:3000`
+- **Backend server** on `http://localhost:3001`
+- **Frontend application** on `http://localhost:3000`
 
-### 5. Authentication
+### Start Components Separately
+
+Backend only:
+```bash
+npm run dev:backend
+```
+
+Frontend only:
+```bash
+npm run dev:frontend
+```
+
+### Production Mode
+
+Build and start:
+```bash
+npm run build
+npm start
+```
+
+## 🔑 Authentication Setup
 
 1. Navigate to `http://localhost:3000`
 2. Click "Connect Google Account"
@@ -141,28 +184,29 @@ Run the complete test suite:
 npm test
 ```
 
-Run tests with coverage:
-```bash
-npm run test:coverage
-```
-
 Run tests in watch mode:
 ```bash
 npm run test:watch
 ```
 
-### Test Structure
-- **Unit Tests**: Individual component and service testing
-- **Integration Tests**: API endpoint and service interaction testing
-- **E2E Tests**: Complete workflow testing
+Run database tests:
+```bash
+npm run db:test
+```
+
+Run API integration tests:
+```bash
+npm run api:test
+```
+
+Run full test suite (database + API):
+```bash
+npm run test:full
+```
 
 ## 🚦 Development
 
 ### Code Quality
-- **ESLint**: Code linting and style enforcement
-- **TypeScript**: Static type checking
-- **Prettier**: Code formatting (add `.prettierrc` if desired)
-
 Run linting:
 ```bash
 npm run lint
@@ -174,24 +218,57 @@ Type checking:
 npm run typecheck
 ```
 
+### Database Management
+```bash
+# View database in browser
+npm run db:studio
+
+# Reset database (careful - deletes all data)
+npm run db:reset
+
+# Deploy migrations to production
+npm run db:deploy
+```
+
+### Docker Commands
+```bash
+# Start services
+npm run docker:up
+
+# Stop services
+npm run docker:down
+
+# View logs
+npm run docker:logs
+```
+
 ### Project Structure
 ```
 gmail-assistant/
-├── src/
-│   ├── server/          # Express server setup
-│   ├── services/        # Core business logic
-│   ├── models/          # Data models
-│   ├── utils/           # Utility functions
-│   └── types/           # TypeScript definitions
-├── frontend/
+├── src/                    # Backend source code
+│   ├── controllers/        # API controllers
+│   ├── database/          # Database setup and repositories
+│   ├── jobs/              # Background job processors
+│   ├── models/            # Data models and business logic
+│   ├── server/            # Express server and routes
+│   ├── services/          # Core business services
+│   ├── types/             # TypeScript type definitions
+│   └── utils/             # Utility functions
+├── frontend/              # Frontend application
 │   ├── src/
-│   │   ├── app/         # Next.js App Router
-│   │   ├── components/  # React components
-│   │   ├── hooks/       # Custom React hooks
-│   │   └── utils/       # Frontend utilities
-├── tests/               # Test files
-├── docs/                # Documentation
-└── dist/                # Compiled output
+│   │   ├── components/    # React components
+│   │   ├── hooks/         # Custom React hooks
+│   │   ├── pages/         # Next.js pages
+│   │   ├── styles/        # CSS styles
+│   │   ├── types/         # Frontend type definitions
+│   │   └── utils/         # Frontend utilities
+│   ├── package.json       # Frontend dependencies
+│   └── next.config.js     # Next.js configuration
+├── prisma/                # Database schema and migrations
+├── scripts/               # Utility scripts
+├── tests/                 # Test files
+├── docs/                  # Project documentation
+└── dist/                  # Compiled backend output
 ```
 
 ## 📚 Documentation

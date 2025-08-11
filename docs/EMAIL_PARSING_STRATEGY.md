@@ -1,397 +1,324 @@
-# Email Parsing and NLP Strategy
+# Email Parsing Strategy - OpenAI MCP Integration
 
 ## Overview
-The email parsing system combines rule-based filtering with AI-powered natural language processing to accurately identify demo requests and extract scheduling preferences from email content.
+The email parsing system uses OpenAI with Model Context Protocol (MCP) to analyze emails and directly integrate with calendar services. The AI can autonomously call calendar functions to find available slots and generate responses.
 
-## Multi-Layer Processing Pipeline
+## MCP-Enhanced Processing Pipeline
 
-### Layer 1: Pre-filtering (Rule-based)
-**Purpose**: Quick elimination of non-relevant emails to reduce API costs
+### Single-Step AI Analysis with Calendar Integration
+**Purpose**: AI analyzes email and directly calls calendar APIs to provide comprehensive scheduling
 
 ```typescript
-interface PreFilterRules {
-  subjectKeywords: string[];
-  bodyKeywords: string[];
-  senderDomainWhitelist?: string[];
-  senderDomainBlacklist: string[];
-  autoReplyDetection: boolean;
-  minimumWordCount: number;
+interface MCPAnalysisResult {
+  isDemoRequest: boolean;
+  confidence: number;
+  contactInfo: {
+    name: string;
+    email: string;
+    company?: string;
+  };
+  proposedTimeSlots: Array<{
+    start: string;
+    end: string;
+    formatted: string;
+  }>;
+  emailResponse: string;
+  reasoning: string;
 }
-
-const preFilterRules: PreFilterRules = {
-  subjectKeywords: [
-    'demo', 'meeting', 'schedule', 'call', 'presentation', 
-    'product tour', 'walkthrough', 'consultation', 'discuss'
-  ],
-  bodyKeywords: [
-    'interested', 'would like', 'can we meet', 'show me',
-    'learn more', 'see the product', 'book a', 'set up'
-  ],
-  senderDomainBlacklist: [
-    'noreply', 'no-reply', 'donotreply', 'mailer-daemon',
-    'postmaster', 'bounce', 'delivery-status'
-  ],
-  autoReplyDetection: true,
-  minimumWordCount: 10
-};
 ```
 
-### Layer 2: Intent Classification (AI-powered)
-**Purpose**: Determine if email is genuinely requesting a demo/meeting
+### Core MCP Analysis Method
+```typescript
+async analyzeEmailAndSchedule(email: EmailMessage): Promise<MCPAnalysisResult> {
+  const tools = calendarService.getMCPTools();
+  
+  const prompt = `
+You are an AI sales assistant that helps schedule product demos. Analyze this email and use calendar tools to find available time slots if it's a demo request.
+
+Your tasks:
+1. Determine if this is a demo request (confidence 0.0-1.0)
+2. Extract contact information (name, email, company)
+3. If it's a demo request, use calendar tools to find 2-3 available time slots
+4. Generate a professional email response with the available times
+
+Rules:
+- Only call calendar functions if confidence > 0.7
+- Respect business hours (9 AM - 5 PM) and working days (Mon-Fri)
+- Propose 30-minute demo slots that are NOT consecutive
+- Scatter slots across different days/times for convenience
+  `;
+  
+  // AI calls calendar functions directly and returns structured result
+  return this.withRetry(async () => {
+    const response = await this.client.chat.completions.create({
+      model: config.openai.model,
+      messages: [{ role: 'user', content: prompt }],
+      tools: tools,
+      tool_choice: 'auto',
+      temperature: 0.1,
+      max_tokens: 2000,
+    });
+    // Process tool calls and return analysis...
+  });
+}
+```
+
+## Available MCP Tools
+
+The AI has access to these calendar functions that it can call directly:
+
+### 1. find_available_slots
+```typescript
+{
+  name: 'find_available_slots',
+  description: 'Find available time slots for scheduling meetings',
+  parameters: {
+    type: 'object',
+    properties: {
+      startDate: { type: 'string', description: 'Start date (YYYY-MM-DD)' },
+      endDate: { type: 'string', description: 'End date (YYYY-MM-DD)' },
+      durationMinutes: { type: 'number', description: 'Meeting duration in minutes' },
+      maxResults: { type: 'number', description: 'Maximum number of slots to return' }
+    }
+  }
+}
+```
+
+### 2. create_calendar_event
+```typescript
+{
+  name: 'create_calendar_event',
+  description: 'Create a new calendar event',
+  parameters: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: 'Event title' },
+      start: { type: 'string', description: 'Start date/time (ISO 8601)' },
+      end: { type: 'string', description: 'End date/time (ISO 8601)' },
+      attendees: { type: 'array', items: { type: 'string' }, description: 'Attendee emails' },
+      description: { type: 'string', description: 'Event description' }
+    }
+  }
+}
+```
+
+### 3. get_calendar_events
+```typescript
+{
+  name: 'get_calendar_events',
+  description: 'Retrieve existing calendar events',
+  parameters: {
+    type: 'object',
+    properties: {
+      timeMin: { type: 'string', description: 'Start time (ISO 8601)' },
+      timeMax: { type: 'string', description: 'End time (ISO 8601)' },
+      maxResults: { type: 'number', description: 'Maximum events to return' }
+    }
+  }
+}
+```
+
+## Reply Analysis for Calendar Events
+
+The system can analyze reply emails to determine if a meeting time was accepted:
 
 ```typescript
-const intentClassificationPrompt = `
-You are an AI assistant that analyzes business emails to identify demo requests.
+async analyzeReplyForCalendarEvent(
+  email: EmailMessage, 
+  scheduledResponse: any
+): Promise<{
+  shouldCreateEvent: boolean;
+  selectedTimeSlot?: { start: string; end: string };
+  reason?: string;
+}> {
+  const prompt = `
+You are analyzing a reply to a scheduled response that proposed meeting time slots.
+Determine if this reply accepts one of the proposed time slots and if a calendar event should be created.
 
-Analyze the following email and determine if it's requesting a product demonstration, sales meeting, or similar business meeting.
+ORIGINAL PROPOSED TIME SLOTS:
+${proposedSlots.map((slot, i) => `${i + 1}. ${slot.formatted}`).join('\n')}
 
-Consider these factors:
-- Explicit requests ("can we schedule a demo")
-- Implicit interest ("would like to learn more")  
-- Business context (B2B communication)
-- Urgency indicators
-- Previous relationship indicators
+REPLY EMAIL:
+From: ${email.from}
+Subject: ${email.subject}
+Body: ${email.body}
 
-Email Content:
-Subject: {subject}
-From: {from}
-Body: {body}
-
-Respond with a JSON object:
-{
-  "isDemoRequest": boolean,
-  "confidence": number (0-1),
-  "intentType": "demo" | "meeting" | "call" | "presentation" | "unknown",
-  "urgency": "low" | "medium" | "high",
-  "reasoning": "brief explanation",
-  "keywords": ["extracted", "relevant", "keywords"]
+Analyze if:
+1. The reply explicitly or implicitly accepts one of the proposed time slots
+2. Which specific time slot is being accepted (if any)
+3. Whether a calendar event should be created
+  `;
+  
+  // Returns structured analysis for calendar event creation
 }
-`;
+```
 
-interface IntentAnalysisResult {
+### Legacy Compatibility Methods
+
+For backward compatibility, the system provides simplified analysis methods:
+
+```typescript
+// Simplified intent analysis
+async analyzeEmailIntent(email: EmailMessage): Promise<{
   isDemoRequest: boolean;
   confidence: number;
   intentType: 'demo' | 'meeting' | 'call' | 'presentation' | 'unknown';
   urgency: 'low' | 'medium' | 'high';
   reasoning: string;
   keywords: string[];
-}
-```
+}>;
 
-### Layer 3: Time Preference Extraction (AI-powered)
-**Purpose**: Extract specific timing preferences from natural language
-
-```typescript
-const timeExtractionPrompt = `
-Extract time preferences from this email content. Be very specific about any mentioned dates, times, or preferences.
-
-Email: {emailContent}
-
-Current date: {currentDate}
-Current timezone: {currentTimezone}
-
-Extract and return JSON:
-{
-  "preferredDays": ["monday", "tuesday"] | null,
-  "specificDates": ["2024-08-05", "2024-08-06"] | null,
-  "preferredTimes": ["morning", "2pm", "after 3"] | null,
-  "timeRange": "morning" | "afternoon" | "evening" | "flexible" | null,
-  "duration": number | null, // minutes if mentioned
-  "timezone": string | null, // if explicitly mentioned
-  "urgency": "low" | "medium" | "high",
-  "avoidTimes": ["early morning", "friday afternoon"] | null,
-  "flexibility": "very_flexible" | "somewhat_flexible" | "specific_times",
-  "businessDaysOnly": boolean,
-  "reasoning": "brief explanation of extracted preferences"
-}
-`;
-
-interface TimeExtractionResult {
-  preferredDays?: string[];
-  specificDates?: string[];
-  preferredTimes?: string[];
-  timeRange?: 'morning' | 'afternoon' | 'evening' | 'flexible';
-  duration?: number;
-  timezone?: string;
-  urgency: 'low' | 'medium' | 'high';
-  avoidTimes?: string[];
-  flexibility: 'very_flexible' | 'somewhat_flexible' | 'specific_times';
-  businessDaysOnly: boolean;
+// Reply analysis for positive responses
+async analyzeReplyForPositiveResponse(
+  replyEmail: EmailMessage, 
+  originalProposedSlots: any[]
+): Promise<{
+  isPositive: boolean;
+  confidence: number;
   reasoning: string;
-}
+  selectedTimeSlot?: number;
+  customTimeProposed?: any;
+}>;
 ```
 
-### Layer 4: Contact Information Extraction
-**Purpose**: Parse sender information and company context
+## Error Handling and Reliability
 
+### Retry Mechanism
 ```typescript
-interface ContactExtraction {
-  name: string;
-  email: string;
-  company?: string;
-  jobTitle?: string;
-  phoneNumber?: string;
-  timezone?: string;
-  linkedInProfile?: string;
-}
-
-const extractContactInfo = (email: EmailMessage): ContactExtraction => {
-  // Parse "John Doe <john@company.com>" format
-  const parseFromField = (from: string) => {
-    const match = from.match(/^(.+?)\s*<(.+?)>$/);
-    if (match) {
-      return { name: match[1].trim(), email: match[2].trim() };
-    }
-    return { name: '', email: from.trim() };
-  };
-
-  // Extract company from email domain
-  const extractCompanyFromDomain = (email: string): string | undefined => {
-    const domain = email.split('@')[1];
-    if (!domain) return undefined;
-    
-    const cleanDomain = domain
-      .replace(/^(www\.|mail\.)/, '')
-      .replace(/\.(com|org|net|io|co).*$/, '');
-    
-    return cleanDomain.charAt(0).toUpperCase() + cleanDomain.slice(1);
-  };
-
-  // Extract additional info from signature
-  const extractFromSignature = (body: string) => {
-    const signaturePatterns = {
-      phone: /(\+?1?[-.\s]?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4})/,
-      jobTitle: /^(.+?)[\r\n].*@/m,
-      linkedin: /(linkedin\.com\/in\/[\w-]+)/i
-    };
-    
-    return {
-      phoneNumber: body.match(signaturePatterns.phone)?.[0],
-      linkedInProfile: body.match(signaturePatterns.linkedin)?.[0]
-    };
-  };
-
-  const { name, email: emailAddr } = parseFromField(email.from);
-  const signatureInfo = extractFromSignature(email.body);
+private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: Error | null = null;
   
-  return {
-    name: name || emailAddr.split('@')[0],
-    email: emailAddr,
-    company: extractCompanyFromDomain(emailAddr),
-    ...signatureInfo
-  };
-};
-```
-
-## Fallback Mechanisms
-
-### Rule-based Fallback
-When AI processing fails or confidence is low:
-
-```typescript
-const ruleBasedIntent = {
-  demoKeywords: [
-    'demo', 'demonstration', 'product tour', 'walkthrough',
-    'show me', 'can you show', 'see the product'
-  ],
-  meetingKeywords: [
-    'meeting', 'call', 'chat', 'discuss', 'talk',
-    'schedule', 'book', 'appointment'
-  ],
-  urgencyKeywords: {
-    high: ['urgent', 'asap', 'immediately', 'today', 'this week'],
-    medium: ['soon', 'next week', 'when possible'],
-    low: ['eventually', 'sometime', 'no rush']
-  },
-  timeKeywords: {
-    morning: ['morning', 'am', '9am', '10am', '11am'],
-    afternoon: ['afternoon', 'pm', '1pm', '2pm', '3pm', '4pm'],
-    evening: ['evening', '5pm', '6pm', 'after work']
-  }
-};
-
-const fallbackIntentDetection = (email: EmailMessage): IntentAnalysisResult => {
-  const content = `${email.subject} ${email.body}`.toLowerCase();
-  
-  const hasDemo = ruleBasedIntent.demoKeywords.some(k => content.includes(k));
-  const hasMeeting = ruleBasedIntent.meetingKeywords.some(k => content.includes(k));
-  const isDemoRequest = hasDemo || hasMeeting;
-  
-  // Determine urgency
-  let urgency: 'low' | 'medium' | 'high' = 'medium';
-  if (ruleBasedIntent.urgencyKeywords.high.some(k => content.includes(k))) {
-    urgency = 'high';
-  } else if (ruleBasedIntent.urgencyKeywords.low.some(k => content.includes(k))) {
-    urgency = 'low';
-  }
-  
-  return {
-    isDemoRequest,
-    confidence: isDemoRequest ? 0.6 : 0.2, // Lower confidence for rule-based
-    intentType: hasDemo ? 'demo' : hasMeeting ? 'meeting' : 'unknown',
-    urgency,
-    reasoning: 'Rule-based fallback analysis',
-    keywords: []
-  };
-};
-```
-
-## Time Parsing Algorithms
-
-### Natural Language Time Processing
-```typescript
-const parseNaturalLanguageTimes = (text: string, referenceDate: Date): TimeSlot[] => {
-  const timePatterns = {
-    // Specific times: "2pm", "2:30", "14:00"
-    specificTime: /(\d{1,2}):?(\d{2})?\s?(am|pm|AM|PM)?/g,
-    
-    // Days: "Monday", "next Tuesday", "this Friday"
-    dayNames: /(next\s+|this\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gi,
-    
-    // Relative dates: "tomorrow", "next week", "in 2 days"
-    relativeDates: /(tomorrow|next week|this week|in \d+ days?)/gi,
-    
-    // Time ranges: "morning", "afternoon", "after 3pm"
-    timeRanges: /(early\s+)?(morning|afternoon|evening)|(after|before)\s+\d{1,2}:?\d{0,2}\s?(am|pm)?/gi
-  };
-  
-  const slots: TimeSlot[] = [];
-  
-  // Process each pattern and convert to concrete time slots
-  // Implementation would use date-fns or similar library
-  
-  return slots;
-};
-```
-
-### Business Hours Mapping
-```typescript
-const mapToBusinessHours = (preferences: TimeExtractionResult, businessRules: BusinessRules): TimeSlot[] => {
-  const businessHours = {
-    morning: { start: '09:00', end: '12:00' },
-    afternoon: { start: '13:00', end: '17:00' },
-    evening: { start: '17:00', end: '19:00' } // Extended for flexibility
-  };
-  
-  const slots: TimeSlot[] = [];
-  
-  if (preferences.timeRange) {
-    const range = businessHours[preferences.timeRange];
-    if (range) {
-      // Generate slots within the preferred time range
-      // over the next 5 business days
-    }
-  }
-  
-  return slots;
-};
-```
-
-## Quality Assurance
-
-### Confidence Scoring
-```typescript
-const calculateOverallConfidence = (
-  intentResult: IntentAnalysisResult,
-  timeResult: TimeExtractionResult,
-  contactQuality: number
-): number => {
-  const weights = {
-    intent: 0.5,
-    timeExtraction: 0.3,
-    contactQuality: 0.2
-  };
-  
-  const timeConfidence = timeResult.flexibility === 'specific_times' ? 0.9 :
-                        timeResult.flexibility === 'somewhat_flexible' ? 0.7 : 0.5;
-  
-  return (
-    intentResult.confidence * weights.intent +
-    timeConfidence * weights.timeExtraction +
-    contactQuality * weights.contactQuality
-  );
-};
-```
-
-### Validation Rules
-```typescript
-const validateParsedEmail = (parsed: ParsedEmail): string[] => {
-  const errors: string[] = [];
-  
-  if (parsed.intent.confidence < 0.3) {
-    errors.push('Low confidence in intent detection');
-  }
-  
-  if (!parsed.contactInfo.email) {
-    errors.push('Missing sender email address');
-  }
-  
-  if (parsed.timePreferences.flexibility === 'specific_times' && 
-      !parsed.timePreferences.specificDates && 
-      !parsed.timePreferences.preferredDays) {
-    errors.push('Claimed specific times but no concrete preferences found');
-  }
-  
-  return errors;
-};
-```
-
-## Error Handling & Monitoring
-
-### Retry Logic for AI Calls
-```typescript
-const withAIRetry = async <T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 2
-): Promise<T> => {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      if (attempt === maxRetries) {
-        // Log error and fall back to rule-based approach
-        console.error('AI processing failed, falling back to rules');
-        throw error;
-      }
+      lastError = error as Error;
       
-      // Exponential backoff
-      await new Promise(resolve => 
-        setTimeout(resolve, Math.pow(2, attempt) * 1000)
-      );
+      if (attempt === this.maxRetries) break;
+      
+      const delay = this.baseDelay * Math.pow(2, attempt - 1);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  throw new Error('All retries exhausted');
-};
-```
-
-### Performance Monitoring
-```typescript
-interface ParsingMetrics {
-  totalEmailsProcessed: number;
-  aiSuccessRate: number;
-  averageProcessingTime: number;
-  fallbackUsageRate: number;
-  intentAccuracy: number; // Would need human validation
+  
+  throw new Error(`OpenAI MCP failed after ${this.maxRetries} attempts`);
 }
-
-const trackParsingPerformance = (
-  startTime: number,
-  usedFallback: boolean,
-  confidence: number
-): void => {
-  const processingTime = Date.now() - startTime;
-  
-  // Update metrics
-  metrics.totalEmailsProcessed++;
-  metrics.averageProcessingTime = 
-    (metrics.averageProcessingTime + processingTime) / 2;
-  
-  if (usedFallback) {
-    metrics.fallbackUsageRate = 
-      (metrics.fallbackUsageRate * (metrics.totalEmailsProcessed - 1) + 1) / 
-      metrics.totalEmailsProcessed;
-  }
-};
 ```
 
-This multi-layered approach ensures high accuracy while maintaining cost efficiency and providing reliable fallbacks when AI processing fails.
+### Tool Call Processing
+The system handles AI tool calls sequentially and provides results back to the AI:
+
+```typescript
+if (message.tool_calls && message.tool_calls.length > 0) {
+  const functionResults: any[] = [];
+  
+  for (const toolCall of message.tool_calls) {
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      let result: any;
+      
+      switch (toolCall.function.name) {
+        case 'find_available_slots':
+          result = await calendarService.find_available_slots(args);
+          break;
+        case 'create_calendar_event':
+          result = await calendarService.create_calendar_event(args);
+          break;
+        // Handle other tool calls...
+      }
+      
+      functionResults.push({ tool_call_id: toolCall.id, result });
+    } catch (error) {
+      functionResults.push({ tool_call_id: toolCall.id, error: error.message });
+    }
+  }
+  
+  // Provide results back to AI for final analysis
+}
+```
+
+## Integration with Background Jobs
+
+The email parsing system integrates with the background job system:
+
+### Email Processing Job
+```typescript
+// EmailProcessingJob uses OpenAIService for analysis
+const analysis = await openAIService.analyzeEmailAndSchedule(email);
+
+if (analysis.isDemoRequest && analysis.confidence > 0.7) {
+  // Create scheduled response with proposed time slots
+  await scheduledResponseService.createResponse({
+    emailRecordId: email.id,
+    proposedTimeSlots: analysis.proposedTimeSlots,
+    emailResponse: analysis.emailResponse,
+    scheduledAt: new Date(Date.now() + 60000) // 1 minute delay
+  });
+}
+```
+
+### Response Processing
+```typescript
+// When replies are received, analyze for calendar event creation
+const replyAnalysis = await openAIService.analyzeReplyForCalendarEvent(
+  replyEmail, 
+  originalScheduledResponse
+);
+
+if (replyAnalysis.shouldCreateEvent && replyAnalysis.selectedTimeSlot) {
+  // Create calendar event using MCP
+  await openAIService.createDemoEventWithAI(
+    contactInfo,
+    replyAnalysis.selectedTimeSlot
+  );
+}
+```
+
+## Configuration and Testing
+
+### Service Configuration
+```typescript
+const openaiService = new OpenAIService();
+
+// Test connection to both OpenAI and Calendar MCP
+await openaiService.testConnection();
+
+// Get usage information
+const usage = await openaiService.getApiUsage();
+console.log('OpenAI MCP Configuration:', {
+  model: usage.model,
+  maxRetries: usage.maxRetries,
+  mcpToolsEnabled: usage.mcpToolsEnabled,
+  calendarFunctionsAvailable: usage.calendarFunctionsAvailable
+});
+```
+
+### Example Usage
+```typescript
+// Analyze email with full MCP integration
+const email: EmailMessage = {
+  subject: "Product Demo Request",
+  from: "john@example.com",
+  body: "Hi, I'm interested in seeing your product. Could we schedule a demo this week?"
+};
+
+const analysis = await openaiService.analyzeEmailAndSchedule(email);
+
+console.log('Analysis Result:', {
+  isDemoRequest: analysis.isDemoRequest,
+  confidence: analysis.confidence,
+  contactInfo: analysis.contactInfo,
+  proposedSlots: analysis.proposedTimeSlots.length,
+  emailResponse: analysis.emailResponse
+});
+
+// If positive reply received, create calendar event
+if (replyIsPositive) {
+  const event = await openaiService.createDemoEventWithAI(
+    analysis.contactInfo,
+    analysis.proposedTimeSlots[0] // Selected time slot
+  );
+}
+```
+
+The OpenAI MCP integration provides a comprehensive email parsing solution that combines AI analysis with direct calendar integration, eliminating the need for complex multi-step processing while maintaining high accuracy and reliability.

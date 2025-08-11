@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApi } from './useApi';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { User } from '../types/user';
 
 export const useUser = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);

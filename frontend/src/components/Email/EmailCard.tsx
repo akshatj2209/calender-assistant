@@ -1,24 +1,5 @@
 import React from 'react';
-
-interface Email {
-  id: string;
-  from: string;
-  subject: string;
-  body: string;
-  receivedAt: string;
-  status: 'pending' | 'processed' | 'failed' | 'response_sent';
-  isDemoRequest?: boolean;
-  intentAnalysis?: {
-    confidence: number;
-    intentType: string;
-  };
-  contactInfo?: {
-    name: string;
-    email: string;
-    company?: string;
-  };
-  calendarEvents?: any[];
-}
+import type { Email } from '../../types/email';
 
 interface EmailCardProps {
   email: Email;

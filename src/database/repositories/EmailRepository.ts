@@ -212,7 +212,6 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
   }
 
 
-  // Get statistics for a user
   async getEmailStats(userId: string, days: number = 30): Promise<{
     total: number;
     pending: number;
@@ -281,7 +280,6 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
     return result;
   }
 
-  // Clean up old processed emails (older than specified days)
   async cleanupOldEmails(days: number = 90): Promise<number> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -298,7 +296,6 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
     return result.count;
   }
 
-  // Create or update email record (upsert based on Gmail message ID)
   async upsertByGmailMessageId(gmailMessageId: string, data: CreateEmailData): Promise<EmailRecord> {
     return this.prisma.emailRecord.upsert({
       where: { gmailMessageId },
@@ -310,11 +307,10 @@ export class EmailRepository extends BaseRepository<EmailRecord> {
     });
   }
 
-  // Bulk create emails (for initial sync)
   async bulkCreate(emails: CreateEmailData[]): Promise<number> {
     const result = await this.prisma.emailRecord.createMany({
       data: emails,
-      skipDuplicates: true // Skip if Gmail message ID already exists
+      skipDuplicates: true
     });
 
     return result.count;

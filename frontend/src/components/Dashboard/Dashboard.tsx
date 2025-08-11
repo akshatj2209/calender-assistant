@@ -6,20 +6,10 @@ import EmailList from '../Email/EmailList';
 import Header from '../Layout/Header';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import StatsCards from './StatsCards';
-
-interface DashboardData {
-  emails: any[];
-  calendarEvents: any[];
-  stats: {
-    totalEmails: number;
-    demoRequests: number;
-    scheduledMeetings: number;
-    responseRate: number;
-  };
-}
+import type { DashboardData, DashboardTab } from '../../types/dashboard';
 
 const Dashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'emails' | 'calendar' | 'scheduled-responses'>('overview');
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +29,6 @@ const Dashboard: React.FC = () => {
 
       console.log('📊 Fetching dashboard data for user:', currentUser.email);
 
-      // Fetch all data in parallel with individual error handling
       // Note: Use live Google Calendar upcoming endpoint so we include external events
       const [emailsResult, googleEventsResult, emailStatsResult, calendarStatsResult] = await Promise.allSettled([
         api.get(`/emails?limit=10&userId=${currentUser.id}`),

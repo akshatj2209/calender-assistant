@@ -209,49 +209,56 @@ npm run db:seed
 ### Core Tables
 
 #### `users`
-- User accounts and authentication
-- Links to Google OAuth tokens
-- User-specific configuration
+- User accounts with embedded business configuration
+- Sales information (sales name, company, email signature)
+- Business hours and meeting preferences
+- Working days and timezone settings
+- Buffer time and meeting duration preferences
 
 #### `google_tokens`
-- Secure storage of OAuth tokens
-- Automatic refresh token handling
+- Secure storage of Google OAuth tokens
+- Automatic token refresh handling
 - Token expiry tracking
+- Linked to user account
 
 #### `email_records`
-- Processed email history
-- AI analysis results
-- Processing status tracking
+- Processed email history with Gmail integration
+- Email direction tracking (inbound/outbound)
+- AI analysis results and demo request detection
+- Processing status and response tracking
+- RFC 2822 Message-ID for proper threading
 
 #### `calendar_event_records`  
-- Created calendar events
-- Attendee management
-- Event status tracking
+- Created calendar events with Google Calendar integration
+- Attendee information and event status
+- Links to originating email records
+- Event timing and timezone handling
 
-#### `user_configs`
-- Per-user business rules
-- Custom scheduling preferences
-- Email templates
+#### `scheduled_responses`
+- Draft and scheduled email responses
+- Proposed time slots (stored as JSON)
+- Response status tracking (draft, scheduled, sent, etc.)
+- User editing capabilities and history
 
-#### `processing_metrics`
-- Daily usage statistics
-- Performance tracking
-- Success/failure rates
+### Current Schema Relationships
+```sql
+users
+├── google_tokens (1:1)
+├── email_records (1:many)
+├── calendar_event_records (1:many)
+└── scheduled_responses (1:many)
 
-#### `activity_logs`
-- Audit trail
-- Error tracking
-- User actions
-
-### Relationships
+email_records
+├── calendar_event_records (1:many)
+└── scheduled_responses (1:many)
 ```
-User (1) ←→ (1) GoogleTokens
-User (1) ←→ (1) UserConfig
-User (1) ←→ (*) EmailRecord
-User (1) ←→ (*) CalendarEventRecord
-User (1) ←→ (*) ProcessingMetrics
-EmailRecord (1) ←→ (*) CalendarEventRecord
-```
+
+### Key Schema Features
+- **User-centralized configuration**: Business rules stored directly in user table
+- **Email processing pipeline**: Status tracking from pending to completed
+- **Response scheduling system**: Draft, schedule, and track email responses
+- **Calendar integration**: Events linked to emails with attendee management
+- **Audit trail**: Processing timestamps and status updates
 
 ## 🔧 Maintenance Commands
 

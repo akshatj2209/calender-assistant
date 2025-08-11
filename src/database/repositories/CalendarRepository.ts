@@ -175,7 +175,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     status?: CalendarEventStatus;
     limit?: number;
   }): Promise<CalendarEventRecord[]> {
-    // Demo events are identified by their relationship to email records that are demo requests
     return this.prisma.calendarEventRecord.findMany({
       where: {
         userId,
@@ -226,21 +225,18 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
       where: {
         userId,
         OR: [
-          // Event starts within the range
           {
             startTime: {
               gte: startTime,
               lt: endTime
             }
           },
-          // Event ends within the range
           {
             endTime: {
               gt: startTime,
               lte: endTime
             }
           },
-          // Event spans the entire range
           {
             startTime: { lte: startTime },
             endTime: { gte: endTime }
@@ -285,7 +281,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     });
   }
 
-  // Get calendar statistics for a user
   async getCalendarStats(userId: string, days: number = 30): Promise<{
     totalEvents: number;
     demoEvents: number;
@@ -305,7 +300,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
         },
         _count: { id: true }
       }),
-      // Get demo events count by checking related email records
       this.prisma.calendarEventRecord.aggregate({
         where: {
           userId,
@@ -356,7 +350,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     return result;
   }
 
-  // Create or update calendar event (upsert based on Google event ID)
   async upsertByGoogleEventId(
     googleEventId: string,
     calendarId: string = 'primary',
@@ -377,7 +370,6 @@ export class CalendarRepository extends BaseRepository<CalendarEventRecord> {
     });
   }
 
-  // Clean up old events (older than specified days)
   async cleanupOldEvents(days: number = 365): Promise<number> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);

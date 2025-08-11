@@ -6,7 +6,6 @@ import { authService } from '@/services/AuthService';
 import prisma from '@/database/connection';
 import authRoutes from './routes/auth';
 import calendarRoutes from './routes/calendar';
-// Database-backed routes
 import usersRoutes from './routes/users';
 import emailsRoutes from './routes/emails';
 import calendarEventsRoutes from './routes/calendar-events';
@@ -52,8 +51,6 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/calendar', calendarRoutes);
-
-// Database-backed routes
 app.use('/api/users', usersRoutes);
 app.use('/api/emails', emailsRoutes);
 app.use('/api/calendar-events', calendarEventsRoutes);
@@ -97,7 +94,6 @@ app.use('*', (req, res) => {
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Server Error:', err);
 
-  // Don't expose internal errors in production
   const isProduction = process.env.NODE_ENV === 'production';
   
   res.status(err.status || 500).json({

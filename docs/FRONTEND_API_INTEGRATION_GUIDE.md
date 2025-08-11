@@ -86,20 +86,22 @@ const ApiTest: React.FC = () => {
 ### Step 2: User Management Integration
 
 ```tsx
-// Example: Create a user
-const createUser = async () => {
+// Example: Find or create user (main method used)
+const findOrCreateUser = async (userData: any) => {
   try {
-    const response = await api.users.create({
-      email: 'user@example.com',
-      name: 'John Doe'
+    const response = await api.users.findOrCreate({
+      email: userData.email,
+      name: userData.name
     });
-    console.log('User created:', response.data.user);
+    console.log('User found/created:', response.data.user);
+    return response.data.user;
   } catch (error) {
-    console.error('Failed to create user:', error);
+    console.error('Failed to find/create user:', error);
+    return null;
   }
 };
 
-// Example: Get user by ID
+// Example: Get user by ID  
 const getUser = async (userId: string) => {
   try {
     const response = await api.users.getById(userId);
@@ -110,18 +112,21 @@ const getUser = async (userId: string) => {
   }
 };
 
-// Example: Update user configuration
-const updateUserConfig = async (userId: string) => {
+// Example: Update user information
+const updateUser = async (userId: string, updates: any) => {
   try {
-    const response = await api.users.updateConfig(userId, {
+    const response = await api.users.update(userId, {
       salesName: 'John Sales',
-      companyName: 'My Company',
+      companyName: 'My Company', 
       businessHoursStart: '09:00',
-      businessHoursEnd: '17:00'
+      businessHoursEnd: '17:00',
+      workingDays: [1, 2, 3, 4, 5], // Mon-Fri
+      meetingDuration: 30,
+      bufferTime: 15
     });
-    console.log('Config updated:', response.data);
+    console.log('User updated:', response.data);
   } catch (error) {
-    console.error('Failed to update config:', error);
+    console.error('Failed to update user:', error);
   }
 };
 ```
@@ -129,12 +134,13 @@ const updateUserConfig = async (userId: string) => {
 ### Step 3: Email Management Integration
 
 ```tsx
-// Example: Fetch recent emails
-const fetchEmails = async () => {
+// Example: Search emails with filters
+const fetchEmails = async (userId: string) => {
   try {
     const response = await api.emails.search({
+      userId: userId,
       limit: 10,
-      status: 'processed',
+      processingStatus: 'COMPLETED',
       isDemoRequest: true
     });
     return response.data.emails;
@@ -145,34 +151,38 @@ const fetchEmails = async () => {
 };
 
 // Example: Get email statistics
-const getEmailStats = async (days: number = 30) => {
+const getEmailStats = async (userId: string, days: number = 30) => {
   try {
-    const response = await api.emails.getStats({ days });
-    return response.data;
+    const response = await api.emails.getStats({
+      userId: userId,
+      days: days
+    });
+    return response.data.stats;
   } catch (error) {
     console.error('Failed to get email stats:', error);
     return null;
   }
 };
 
-// Example: Mark email as processed
-const processEmail = async (emailId: string) => {
+// Example: Trigger email processing job
+const triggerEmailProcessing = async () => {
   try {
-    const response = await api.emails.markProcessed(emailId, {
-      isDemoRequest: true,
-      intentAnalysis: {
-        confidence: 0.95,
-        intentType: 'demo_request'
-      },
-      contactInfo: {
-        name: 'Prospect Name',
-        email: 'prospect@company.com',
-        company: 'Prospect Company'
-      }
-    });
-    console.log('Email processed:', response.data);
+    const response = await api.emails.triggerProcessing();
+    console.log('Email processing triggered:', response.data);
+    return response.data;
   } catch (error) {
-    console.error('Failed to process email:', error);
+    console.error('Failed to trigger email processing:', error);
+  }
+};
+
+// Example: Trigger response sending job
+const triggerResponseSending = async () => {
+  try {
+    const response = await api.emails.triggerResponseSending();
+    console.log('Response sending triggered:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to trigger response sending:', error);
   }
 };
 ```
@@ -181,9 +191,12 @@ const processEmail = async (emailId: string) => {
 
 ```tsx
 // Example: Fetch upcoming events
-const fetchUpcomingEvents = async (days: number = 7) => {
+const fetchUpcomingEvents = async (userId: string, days: number = 7) => {
   try {
-    const response = await api.calendarEvents.getUpcoming({ days });
+    const response = await api.calendarEvents.getUpcoming({
+      userId: userId,
+      days: days
+    });
     return response.data.events;
   } catch (error) {
     console.error('Failed to fetch events:', error);
@@ -191,33 +204,49 @@ const fetchUpcomingEvents = async (days: number = 7) => {
   }
 };
 
-// Example: Create calendar event
-const createCalendarEvent = async (emailId: string) => {
-  const startTime = new Date();
-  startTime.setDate(startTime.getDate() + 1); // Tomorrow
-  startTime.setHours(14, 0, 0, 0); // 2 PM
-  
-  const endTime = new Date(startTime);
-  endTime.setMinutes(endTime.getMinutes() + 30); // 30 minutes
+// Example: Get calendar statistics
+const getCalendarStats = async (userId: string, days: number = 30) => {
+  try {
+    const response = await api.calendarEvents.getStats({
+      userId: userId,
+      days: days
+    });
+    return response.data.stats;
+  } catch (error) {
+    console.error('Failed to get calendar stats:', error);
+    return null;
+  }
+};
 
+// Example: Create calendar event
+const createCalendarEvent = async (userId: string, eventData: any) => {
   try {
     const response = await api.calendarEvents.create({
-      userId: 'user-id',
-      emailRecordId: emailId,
-      googleEventId: `demo-${Date.now()}`,
-      summary: 'Product Demo',
-      description: 'Scheduled product demonstration',
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
-      timezone: 'America/Los_Angeles',
-      attendeeEmail: 'prospect@company.com',
-      attendeeName: 'Prospect Name',
-      isDemo: true,
-      meetingType: 'demo'
+      userId: userId,
+      emailRecordId: eventData.emailRecordId,
+      googleEventId: eventData.googleEventId,
+      summary: eventData.summary,
+      startTime: eventData.startTime,
+      endTime: eventData.endTime,
+      timezone: eventData.timezone || 'UTC',
+      attendeeEmail: eventData.attendeeEmail,
+      attendeeName: eventData.attendeeName,
+      status: 'CONFIRMED'
     });
     console.log('Event created:', response.data.event);
+    return response.data.event;
   } catch (error) {
     console.error('Failed to create event:', error);
+  }
+};
+
+// Example: Cancel calendar event
+const cancelEvent = async (eventId: string) => {
+  try {
+    const response = await api.calendarEvents.cancel(eventId);
+    console.log('Event cancelled:', response.data);
+  } catch (error) {
+    console.error('Failed to cancel event:', error);
   }
 };
 

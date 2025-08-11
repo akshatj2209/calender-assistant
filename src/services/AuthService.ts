@@ -23,7 +23,6 @@ export class AuthService {
 
   async initialize(): Promise<void> {
     try {
-      // Try to load existing token
       const token = await this.loadSavedToken();
       if (token) {
         this.oauth2Client.setCredentials(token);
@@ -68,7 +67,7 @@ export class AuthService {
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: allScopes,
-      prompt: 'consent' // Force consent screen to get refresh token
+      prompt: 'consent'
     });
   }
 
@@ -83,15 +82,12 @@ export class AuthService {
       
       console.log('✅ Got tokens from Google');
       
-      // Set credentials for this session
       this.oauth2Client.setCredentials(tokens);
       
-      // Get user info from Google's userinfo API
       console.log('🔄 Getting user info from Google API...');
       
       let userInfo;
       try {
-        // Use the People API to get user information
         const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
         const userInfoResponse = await oauth2.userinfo.get();
         userInfo = userInfoResponse.data;
@@ -105,21 +101,17 @@ export class AuthService {
         throw new Error('No email found in user info');
       }
       
-      // Use the user info from Google API
       console.log('Authentication: Using user info for:', userInfo.email);
       
-      // Create or update user in database
       const userRepository = await import('@/database/repositories/UserRepository');
       const userRepo = new userRepository.UserRepository();
       
       let user;
       try {
-        // Try to find existing user
         user = await userRepo.findByEmail(userInfo.email);
         if (user) {
           console.log('Authentication: Found existing user');
         } else {
-          // Create new user if not found
           user = await userRepo.create({
             email: userInfo.email,
             name: userInfo.name || userInfo.given_name || userInfo.email
@@ -131,12 +123,10 @@ export class AuthService {
         throw new Error('Failed to handle user authentication');
       }
       
-      // Ensure user is properly defined
       if (!user || !user.id) {
         throw new Error('Failed to create or retrieve user');
       }
       
-      // Store Google tokens for this user
       const tokenRepository = await import('@/database/repositories');
       const prisma = (await import('@/database/connection')).default;
       
@@ -157,7 +147,6 @@ export class AuthService {
         }
       });
       
-      // Save tokens for file-based access (backward compatibility)
       await this.saveToken(tokens);
       
       console.log('Authentication: Successfully authenticated and saved tokens for user:', user.email);
@@ -172,10 +161,8 @@ export class AuthService {
     try {
       const { credentials } = await this.oauth2Client.refreshAccessToken();
       
-      // Update stored credentials
       this.oauth2Client.setCredentials(credentials);
       
-      // Save updated tokens
       await this.saveToken(credentials);
       
       console.log('Authentication: Successfully refreshed access token');
@@ -188,14 +175,12 @@ export class AuthService {
 
   async ensureValidToken(): Promise<boolean> {
     try {
-      // Check if we have credentials
       const credentials = this.oauth2Client.credentials;
       if (!credentials || !credentials.access_token) {
         console.log('Authentication: No access token available');
         return false;
       }
 
-      // Check if token is expired or about to expire (within 5 minutes)
       const expiryDate = credentials.expiry_date;
       const now = new Date().getTime();
       const fiveMinutesFromNow = now + (5 * 60 * 1000);
@@ -230,7 +215,6 @@ export class AuthService {
         return false;
       }
 
-      // Try to make a simple API call to test authentication
       const gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
       await gmail.users.getProfile({ userId: 'me' });
       
@@ -248,15 +232,12 @@ export class AuthService {
         await this.oauth2Client.revokeToken(credentials.access_token);
       }
       
-      // Clear stored credentials
       this.oauth2Client.setCredentials({});
       
-      // Remove saved token file
       try {
         await fs.unlink(tokenPath);
         console.log('Authentication: Token file removed');
       } catch (error) {
-        // File might not exist, which is okay
       }
       
       console.log('Authentication: Successfully revoked token');
@@ -273,7 +254,6 @@ export class AuthService {
         return null;
       }
 
-      // Get token info from Google
       const response = await fetch(
         `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${credentials.access_token}`
       );
@@ -289,7 +269,6 @@ export class AuthService {
     }
   }
 
-  // Utility method to check specific scopes
   async hasRequiredScopes(requiredScopes: string[]): Promise<boolean> {
     try {
       const tokenInfo = await this.getTokenInfo();
@@ -305,7 +284,6 @@ export class AuthService {
     }
   }
 
-  // Get current authentication status
   async getAuthStatus(): Promise<{
     isAuthenticated: boolean;
     hasValidToken: boolean;

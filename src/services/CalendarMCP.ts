@@ -1,65 +1,18 @@
 import { CalendarEventModel } from '@/models/CalendarEvent';
-import { CalendarEvent, EventDateTime, TimeSlot } from '@/types';
+import { 
+  CalendarEvent, 
+  EventDateTime, 
+  TimeSlot, 
+  CalendarQuery, 
+  CreateEventOptions, 
+  CalendarTools,
+  FindAvailableSlotsParams,
+  GetCalendarEventsParams,
+  CreateCalendarEventParams
+} from '@/types';
 import { addDays } from 'date-fns';
 import { google } from 'googleapis';
 import { authService } from './AuthService';
-
-export interface CalendarQuery {
-  timeMin?: Date;
-  timeMax?: Date;
-  maxResults?: number;
-  singleEvents?: boolean;
-  orderBy?: 'startTime' | 'updated';
-  q?: string;
-}
-
-export interface CreateEventOptions {
-  summary: string;
-  description?: string;
-  start: EventDateTime;
-  end: EventDateTime;
-  attendees?: Array<{ email: string; displayName?: string }>;
-  location?: string;
-  sendNotifications?: boolean;
-  conferenceData?: any;
-}
-
-// MCP Tool definitions for calendar operations
-export interface CalendarTools {
-  find_available_slots: {
-    description: 'Find available time slots for scheduling meetings';
-    parameters: {
-      timeMin: string;
-      timeMax: string;
-      duration?: number;
-      businessHoursStart?: string;
-      businessHoursEnd?: string;
-      workingDays?: number[];
-      maxResults?: number;
-    };
-  };
-  get_calendar_events: {
-    description: 'Get existing calendar events within a time range';
-    parameters: {
-      timeMin: string;
-      timeMax: string;
-      maxResults?: number;
-      query?: string;
-    };
-  };
-  create_calendar_event: {
-    description: 'Create a new calendar event';
-    parameters: {
-      summary: string;
-      description?: string;
-      startDateTime: string;
-      endDateTime: string;
-      attendeeEmail?: string;
-      attendeeName?: string;
-      location?: string;
-    };
-  };
-}
 
 /**
  * Calendar service with MCP-compatible tools for AI function calling
@@ -92,15 +45,7 @@ export class CalendarService {
    * MCP Tool: Find available time slots
    * This is designed to be called by AI via function calling
    */
-  async find_available_slots(params: {
-    timeMin: string;
-    timeMax: string;
-    duration?: number;
-    businessHoursStart?: string;
-    businessHoursEnd?: string;
-    workingDays?: number[];
-    maxResults?: number;
-  }): Promise<TimeSlot[]> {
+  async find_available_slots(params: FindAvailableSlotsParams): Promise<TimeSlot[]> {
     await this.ensureAuthenticated();
 
     console.log('Calendar MCP: find_available_slots called with params:', JSON.stringify(params, null, 2));
@@ -225,12 +170,7 @@ export class CalendarService {
    * MCP Tool: Get calendar events
    * This is designed to be called by AI via function calling
    */
-  async get_calendar_events(params: {
-    timeMin: string;
-    timeMax: string;
-    maxResults?: number;
-    query?: string;
-  }): Promise<CalendarEvent[]> {
+  async get_calendar_events(params: GetCalendarEventsParams): Promise<CalendarEvent[]> {
     await this.ensureAuthenticated();
 
     const { timeMin, timeMax, maxResults = 50, query } = params;
@@ -273,15 +213,7 @@ export class CalendarService {
    * MCP Tool: Create calendar event
    * This is designed to be called by AI via function calling
    */
-  async create_calendar_event(params: {
-    summary: string;
-    description?: string;
-    startDateTime: string;
-    endDateTime: string;
-    attendeeEmail?: string;
-    attendeeName?: string;
-    location?: string;
-  }): Promise<CalendarEvent> {
+  async create_calendar_event(params: CreateCalendarEventParams): Promise<CalendarEvent> {
     await this.ensureAuthenticated();
 
     const {

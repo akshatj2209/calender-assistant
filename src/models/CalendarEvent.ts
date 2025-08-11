@@ -69,15 +69,6 @@ export class CalendarEventModel implements CalendarEvent {
     );
   }
 
-  overlapsWith(other: CalendarEventModel): boolean {
-    const thisStart = this.getStartDate();
-    const thisEnd = this.getEndDate();
-    const otherStart = other.getStartDate();
-    const otherEnd = other.getEndDate();
-    
-    return thisStart < otherEnd && thisEnd > otherStart;
-  }
-
   // Event classification
   isAllDay(): boolean {
     // All-day events in Google Calendar use date instead of dateTime
@@ -108,70 +99,11 @@ export class CalendarEventModel implements CalendarEvent {
     return !!this.recurringEventId;
   }
 
-  // Buffer time calculations
-  needsBufferTime(): boolean {
-    // Determine if this event needs buffer time based on type/location
-    if (this.location && this.isInPersonMeeting()) {
-      return true;
-    }
-    
-    // Check if it's a meeting with multiple attendees (likely needs buffer)
-    return this.attendees.length > 2;
-  }
-
-  isInPersonMeeting(): boolean {
-    if (!this.location) return false;
-    
-    const location = this.location.toLowerCase();
-    const virtualMeetingIndicators = [
-      'zoom', 'teams', 'meet.google.com', 'webex', 
-      'skype', 'hangout', 'virtual', 'online'
-    ];
-    
-    return !virtualMeetingIndicators.some(indicator => 
-      location.includes(indicator)
-    );
-  }
-
   // Attendee management
-  getOrganizerEmail(): string | undefined {
-    return this.attendees.find(a => a.organizer)?.email;
-  }
-
-  isOrganizedBy(email: string): boolean {
-    return this.getOrganizerEmail()?.toLowerCase() === email.toLowerCase();
-  }
-
   hasAttendee(email: string): boolean {
     return this.attendees.some(a => 
       a.email.toLowerCase() === email.toLowerCase()
     );
-  }
-
-  // Export for Google Calendar API
-  toGoogleCalendarEvent(): any {
-    return {
-      id: this.id,
-      summary: this.summary,
-      description: this.description,
-      location: this.location,
-      start: {
-        dateTime: this.start.dateTime,
-        timeZone: this.start.timezone
-      },
-      end: {
-        dateTime: this.end.dateTime,
-        timeZone: this.end.timezone
-      },
-      attendees: this.attendees.map(attendee => ({
-        email: attendee.email,
-        displayName: attendee.name,
-        responseStatus: attendee.responseStatus,
-        organizer: attendee.organizer
-      })),
-      status: this.status,
-      visibility: this.isPrivate ? 'private' : 'default'
-    };
   }
 
   // Validation

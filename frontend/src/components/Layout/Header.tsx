@@ -2,11 +2,12 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../hooks/useAuth';
+import type { DashboardTab } from '../../types/dashboard';
 
 interface HeaderProps {
   onRefresh: () => void;
-  activeTab: 'overview' | 'emails' | 'calendar' | 'scheduled-responses';
-  onTabChange: (tab: 'overview' | 'emails' | 'calendar' | 'scheduled-responses') => void;
+  activeTab: DashboardTab;
+  onTabChange: (tab: DashboardTab) => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ onRefresh, activeTab, onTabChange }) => {

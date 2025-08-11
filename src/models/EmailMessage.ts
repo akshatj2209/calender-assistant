@@ -60,35 +60,6 @@ export class EmailMessageModel implements EmailMessage {
     this.isDemoRequest = isDemoRequest;
   }
 
-  // Email content analysis helpers
-  containsKeywords(keywords: string[]): boolean {
-    const content = `${this.subject} ${this.body}`.toLowerCase();
-    return keywords.some(keyword => content.includes(keyword.toLowerCase()));
-  }
-
-  isFromExternalDomain(internalDomains: string[] = []): boolean {
-    const senderDomain = this.from.split('@')[1]?.toLowerCase();
-    if (!senderDomain) return false;
-    
-    return !internalDomains.some(domain => 
-      senderDomain === domain.toLowerCase() || 
-      senderDomain.endsWith(`.${domain.toLowerCase()}`)
-    );
-  }
-
-  isAutoReply(): boolean {
-    const autoReplyHeaders = ['auto-submitted', 'x-auto-response-suppress'];
-    const autoReplyKeywords = [
-      'out of office',
-      'auto-reply',
-      'automatic reply',
-      'vacation message',
-      'away message'
-    ];
-    
-    const content = `${this.subject} ${this.body}`.toLowerCase();
-    return autoReplyKeywords.some(keyword => content.includes(keyword));
-  }
 
   extractSenderInfo(): ContactInfo {
     // Parse "Name <email@domain.com>" format
@@ -98,7 +69,10 @@ export class EmailMessageModel implements EmailMessage {
     
     // Extract company from email domain
     const domain = email.split('@')[1];
-    const company = domain ? this.domainToCompanyName(domain) : undefined;
+    const company = domain ? 
+      domain.replace(/^(www\.|mail\.|mx\.)/, '').replace(/\.(com|org|net|io|co).*$/, '').charAt(0).toUpperCase() + 
+      domain.replace(/^(www\.|mail\.|mx\.)/, '').replace(/\.(com|org|net|io|co).*$/, '').slice(1) : 
+      undefined;
     
     return {
       name: name || email.split('@')[0],
@@ -107,15 +81,6 @@ export class EmailMessageModel implements EmailMessage {
     };
   }
 
-  private domainToCompanyName(domain: string): string {
-    // Remove common prefixes and suffixes
-    const cleanDomain = domain
-      .replace(/^(www\.|mail\.|mx\.)/, '')
-      .replace(/\.(com|org|net|io|co).*$/, '');
-    
-    // Capitalize first letter
-    return cleanDomain.charAt(0).toUpperCase() + cleanDomain.slice(1);
-  }
 
   // Validation methods
   isValid(): boolean {
@@ -128,23 +93,6 @@ export class EmailMessageModel implements EmailMessage {
     );
   }
 
-  // Email thread context
-  isReply(): boolean {
-    const subject = this.subject.toLowerCase();
-    return subject.startsWith('re:') || 
-           subject.startsWith('reply:') ||
-           subject.includes('in reply to');
-  }
-
-  // Content analysis
-  getWordCount(): number {
-    return this.body.split(/\s+/).filter(word => word.length > 0).length;
-  }
-
-  hasAttachments(): boolean {
-    // This would need to be determined from the Gmail message payload
-    return false; // Placeholder
-  }
 
   // Export for debugging/logging
   toJSON(): Partial<EmailMessage> {

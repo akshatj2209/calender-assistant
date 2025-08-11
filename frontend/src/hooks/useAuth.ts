@@ -1,15 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useApi } from './useApi';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  hasGoogleTokens: boolean;
-}
+import type { AuthUser } from '../types/user';
 
 export const useAuth = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const api = useApi();

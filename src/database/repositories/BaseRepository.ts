@@ -3,7 +3,6 @@ import prisma from '../connection';
 export abstract class BaseRepository<T> {
   protected prisma = prisma;
 
-  // Common repository methods that can be overridden
   create(data: any): Promise<T> {
     throw new Error('Method must be implemented by subclass');
   }
@@ -23,8 +22,6 @@ export abstract class BaseRepository<T> {
   findMany(where?: any, options?: any): Promise<T[]> {
     throw new Error('Method must be implemented by subclass');
   }
-
-  // Helper method for pagination
   protected getPaginationOptions(page?: number, limit?: number) {
     if (!page || !limit) return {};
     
@@ -35,7 +32,6 @@ export abstract class BaseRepository<T> {
     };
   }
 
-  // Helper method for sorting
   protected getSortOptions(sortBy?: string, sortOrder?: 'asc' | 'desc') {
     if (!sortBy) return {};
     
@@ -46,7 +42,6 @@ export abstract class BaseRepository<T> {
     };
   }
 
-  // Helper method for date range filtering
   protected getDateRangeFilter(startDate?: Date, endDate?: Date) {
     if (!startDate && !endDate) return {};
     
@@ -56,8 +51,6 @@ export abstract class BaseRepository<T> {
     
     return dateFilter;
   }
-
-  // Transaction helper
   async executeInTransaction<TResult>(
     callback: (prisma: any) => Promise<TResult>
   ): Promise<TResult> {

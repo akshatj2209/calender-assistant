@@ -1,92 +1,61 @@
-# API-Database Integration Complete! 
+# API-Database Integration Guide
 
-## ✅ What's Been Implemented
+## ✅ Current Implementation
 
 ### 🗄️ **Database Layer (PostgreSQL + Prisma)**
-- **Complete schema** with 7+ tables and relationships
-- **Repository pattern** for clean data access
-- **Type-safe operations** with Prisma Client
+- **Prisma ORM** with complete schema for users, emails, calendar events, and scheduled responses
+- **Type-safe operations** with generated Prisma Client
 - **Migration system** for database versioning
-- **Seeding scripts** with sample data
+- **Relationship management** between entities
+- **User-based configuration** stored in database
 
 ### 🌐 **API Layer (Express + TypeScript)**
-- **MVC architecture** with controllers, services, routes
+- **MVC architecture** with controllers, services, and routes
 - **Database-backed endpoints** for all operations
-- **Input validation** using Zod schemas
-- **Error handling** with proper HTTP status codes
-- **Relationship management** between entities
+- **Comprehensive error handling** with proper HTTP status codes
+- **Background job management** for email processing
 
-### 🔗 **New API Endpoints**
+### 🔗 **Current API Endpoints**
 
 #### User Management (`/api/users`)
 ```
-GET    /api/users/:id                    # Get user by ID
+GET    /api/users/:id                   # Get user by ID
 GET    /api/users/email/:email          # Get user by email  
 POST   /api/users                       # Create new user
 PUT    /api/users/:id                   # Update user
-DELETE /api/users/:id                   # Delete user
 POST   /api/users/find-or-create        # Find or create user
-
-# Configuration
-GET    /api/users/:id/config            # Get user config
-PUT    /api/users/:id/config            # Update user config
-GET    /api/users/:id/stats             # Get user statistics
-
-# Google Tokens
-POST   /api/users/:id/google-tokens     # Store Google tokens
-DELETE /api/users/:id/google-tokens     # Remove Google tokens
 ```
 
 #### Email Management (`/api/emails`)
 ```
-GET    /api/emails/:id                  # Get email by ID
-GET    /api/emails/gmail/:messageId     # Get by Gmail message ID
-POST   /api/emails                      # Create email record
-PUT    /api/emails/:id                  # Update email record
-DELETE /api/emails/:id                  # Delete email record
+# Search & Statistics
+GET    /api/emails                      # Search emails with filters
+GET    /api/emails/stats                # Email statistics
 
-# Search & Filter
-GET    /api/emails?userId=xxx&isDemoRequest=true  # Search emails
-GET    /api/emails/status/pending       # Get pending emails
-GET    /api/emails/status/failed        # Get failed emails
-GET    /api/emails/demo-requests        # Get demo requests
-GET    /api/emails/retry                # Get emails for retry
-GET    /api/emails/stats               # Email statistics
-
-# Processing
-POST   /api/emails/:id/mark-processed   # Mark as processed
-POST   /api/emails/:id/mark-failed      # Mark as failed
-POST   /api/emails/:id/mark-response-sent # Mark response sent
-POST   /api/emails/upsert-gmail         # Upsert by Gmail ID
-
-# Maintenance
-DELETE /api/emails/cleanup              # Cleanup old emails
+# Job Management
+POST   /api/emails/jobs/trigger-processing        # Trigger email processing job
+POST   /api/emails/jobs/trigger-response-sending  # Trigger response sending job
+GET    /api/emails/jobs/status                    # Get job status
 ```
 
 #### Calendar Events (`/api/calendar-events`)
 ```
+# Statistics & Upcoming
+GET    /api/calendar-events/stats       # Calendar statistics  
+GET    /api/calendar-events/upcoming    # Get upcoming events
+
+# CRUD Operations
 GET    /api/calendar-events/:id         # Get event by ID
-GET    /api/calendar-events/google/:googleEventId # Get by Google ID
 POST   /api/calendar-events             # Create new event
 PUT    /api/calendar-events/:id         # Update event
 DELETE /api/calendar-events/:id         # Delete event
 
-# Search & Filter
-GET    /api/calendar-events?userId=xxx  # Search events
-GET    /api/calendar-events/upcoming    # Get upcoming events
-GET    /api/calendar-events/demo-events # Get demo events
-GET    /api/calendar-events/attendee/:email # Get by attendee
-GET    /api/calendar-events/time-range  # Get events in time range
-GET    /api/calendar-events/stats      # Calendar statistics
-
 # Event Management
-POST   /api/calendar-events/:id/update-response # Update attendee response
 POST   /api/calendar-events/:id/cancel  # Cancel event
 POST   /api/calendar-events/:id/confirm # Confirm event
-POST   /api/calendar-events/upsert-google # Upsert by Google ID
 
-# Maintenance
-DELETE /api/calendar-events/cleanup     # Cleanup old events
+# Search (general endpoint)
+GET    /api/calendar-events             # Search events with filters
 ```
 
 ## 🧪 **Testing Framework**
@@ -160,60 +129,71 @@ npm run dev:backend
 ## 📊 **Database Schema Overview**
 
 ```sql
-users (id, email, name, created_at, updated_at)
+users (id, email, name, sales_name, company_name, business_hours, ...)
 ├── google_tokens (user_id, access_token, refresh_token, expires_at)
-├── user_configs (user_id, business_hours, working_days, ...)
-├── email_records (user_id, gmail_message_id, subject, body, ...)
-├── calendar_event_records (user_id, google_event_id, summary, ...)
-├── processing_metrics (user_id, date, emails_processed, ...)
-└── activity_logs (user_id, action, resource, description, ...)
+├── email_records (user_id, gmail_message_id, subject, body, processing_status, ...)
+├── calendar_event_records (user_id, google_event_id, summary, start_time, ...)
+└── scheduled_responses (user_id, email_record_id, scheduled_at, status, ...)
 
 # Relationships
 user → google_tokens (1:1)
-user → user_configs (1:1)  
 user → email_records (1:many)
 user → calendar_event_records (1:many)
+user → scheduled_responses (1:many)
 email_record → calendar_event_records (1:many)
+email_record → scheduled_responses (1:many)
 ```
 
-## 🔄 **Typical Workflow**
+### Key Schema Features
+- **User-based configuration**: Business hours, meeting preferences, and company info stored with user
+- **Email processing tracking**: Processing status, response generation, and AI analysis results
+- **Calendar event management**: Google Calendar integration with attendee management
+- **Scheduled response system**: Draft, schedule, and track email responses
 
-### Email Processing Flow
+## 🔄 **Current Implementation**
+
+### Email Processing Job Flow
 ```javascript
-// 1. Gmail service detects new email
-const gmailMessage = await gmailService.getNewMessages();
+// 1. Background job monitors Gmail for new emails
+const emailProcessingJob = new EmailProcessingJob();
 
-// 2. Create/update email record in database
-const email = await emailRepository.upsertByGmailMessageId(messageId, {
-  userId, from, to, subject, body, receivedAt
-});
+// 2. Job processes emails in batches
+const unprocessedEmails = await emailService.getUnprocessedEmails();
 
-// 3. Process with AI
-const intentAnalysis = await openaiService.analyzeEmailIntent(email);
-const timePreferences = await openaiService.extractTimePreferences(email);
-
-// 4. Update email record with analysis
-await emailRepository.markAsProcessed(email.id, {
-  isDemoRequest: intentAnalysis.isDemoRequest,
-  intentAnalysis,
-  timePreferences,
-  contactInfo
-});
-
-// 5. If demo request, find available times
-if (intentAnalysis.isDemoRequest) {
-  const availableSlots = await calendarService.findAvailableSlots(...);
+// 3. For each email, analyze with AI
+for (const email of unprocessedEmails) {
+  const analysis = await openAIService.analyzeEmailIntent(email);
   
-  // 6. Create calendar event
-  const calendarEvent = await calendarRepository.create({
-    userId, emailRecordId: email.id,
-    googleEventId, summary, startTime, endTime,
-    attendeeEmail, isDemo: true
+  // 4. Update email processing status
+  await emailService.updateProcessingStatus(email.id, 'COMPLETED', {
+    isDemoRequest: analysis.isDemoRequest
   });
   
-  // 7. Send response email
-  const responseId = await gmailService.sendDemoResponse(...);
-  await emailRepository.markResponseSent(email.id, responseId);
+  // 5. If demo request, create scheduled response
+  if (analysis.isDemoRequest) {
+    await scheduledResponseService.createResponse({
+      emailRecordId: email.id,
+      proposedTimeSlots: await calendarService.findAvailableSlots(),
+      scheduledAt: new Date(Date.now() + 60000) // 1 minute delay
+    });
+  }
+}
+```
+
+### Response Sending Job Flow
+```javascript
+// 1. Background job monitors scheduled responses
+const responseSenderJob = new ResponseSenderJob();
+
+// 2. Get responses ready to send
+const readyResponses = await scheduledResponseService.getReadyToSend();
+
+// 3. Send each response via Gmail API
+for (const response of readyResponses) {
+  const sentMessage = await gmailService.sendResponse(response);
+  
+  // 4. Update response status
+  await scheduledResponseService.markAsSent(response.id, sentMessage.id);
 }
 ```
 

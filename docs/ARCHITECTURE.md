@@ -1,7 +1,7 @@
 # Gmail Calendar Assistant - System Architecture
 
 ## Overview
-This system is designed to automatically monitor Gmail for demo requests and respond with available meeting times by integrating with Google Calendar. The architecture follows a microservices pattern with clear separation of concerns.
+This system is designed to automatically monitor Gmail for demo requests and respond with available meeting times by integrating with Google Calendar. The architecture uses a modern Express.js backend with Prisma ORM, Next.js frontend, and background job processing.
 
 ## High-Level Architecture
 
@@ -10,111 +10,105 @@ This system is designed to automatically monitor Gmail for demo requests and res
 │   Frontend      │    │   Backend API    │    │  External APIs  │
 │   (Next.js)     │◄──►│   (Express.js)   │◄──►│                 │
 │                 │    │                  │    │  • Gmail API    │
-│  • Dashboard    │    │  • Email Monitor │    │  • Calendar API │
-│  • Config UI    │    │  • Scheduler     │    │  • OpenAI API   │
-│  • Status View  │    │  • Responder     │    │                 │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+│  • Dashboard    │    │  • Controllers   │    │  • Calendar API │
+│  • Config UI    │    │  • Services      │    │  • OpenAI API   │
+│  • Email List   │    │  • Background    │    │  • Calendar MCP │
+│  • Calendar     │    │    Jobs          │    │                 │
+└─────────────────┘    └──────┬───────────┘    └─────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │   Database Layer   │
+                    │   (PostgreSQL)     │
+                    │                    │
+                    │  • Prisma ORM      │
+                    │  • User Config     │
+                    │  • Email Records   │
+                    │  • Calendar Events │
+                    │  • Scheduled       │
+                    │    Responses       │
+                    └────────────────────┘
 ```
 
 ## Core Components
 
-### 1. Email Monitoring Service (`EmailMonitor`)
-- **Purpose**: Continuously monitors Gmail for new demo request emails
-- **Responsibilities**:
-  - Poll Gmail API for new messages
-  - Filter emails based on content and intent
-  - Extract email metadata and content
-- **Key Methods**:
-  - `startMonitoring()`: Begin email polling
-  - `processNewEmails()`: Handle new emails
-  - `isValidDemoRequest()`: Filter logic
+### 1. Controllers (`src/controllers/`)
+- **EmailController**: Handles email-related API endpoints
+  - Email statistics, job triggering, email search
+- **CalendarController**: Manages calendar events
+  - CRUD operations, event statistics, upcoming events  
+- **UserController**: User management
+  - User creation, updates, find-or-create operations
 
-### 2. Email Parsing Service (`EmailParser`)
-- **Purpose**: Parse email content to extract scheduling preferences
-- **Responsibilities**:
-  - Use NLP to understand time preferences
-  - Extract contact information
-  - Identify urgency and context
-- **Key Methods**:
-  - `parseEmail()`: Extract structured data from email
-  - `extractTimePreferences()`: Identify preferred meeting times
-  - `detectIntent()`: Confirm this is a demo request
+### 2. Services (`src/services/`)
+- **GmailService**: Interface with Gmail API
+  - Fetch messages, send responses, OAuth handling
+- **OpenAIService**: AI-powered email analysis
+  - Intent detection, time preference extraction
+- **CalendarMCP**: Calendar integration via MCP protocol
+  - Calendar availability, event creation
+- **AuthService**: Authentication management
+  - Google OAuth flow, token management
 
-### 3. Calendar Service (`CalendarService`)
-- **Purpose**: Interface with Google Calendar API
-- **Responsibilities**:
-  - Fetch existing calendar events
-  - Check availability
-  - Create new calendar events
-- **Key Methods**:
-  - `getAvailability()`: Find free time slots
-  - `createEvent()`: Schedule new meeting
-  - `checkConflicts()`: Avoid double-booking
+### 3. Background Jobs (`src/jobs/`)
+- **EmailProcessingJob**: Processes incoming emails
+  - Monitors Gmail, analyzes content with AI
+  - Updates database with processing results
+- **ResponseSenderJob**: Sends scheduled responses
+  - Monitors scheduled responses, sends via Gmail
+  - Updates response status after sending
 
-### 4. Scheduling Engine (`SchedulingEngine`)
-- **Purpose**: Core business logic for finding optimal meeting times
-- **Responsibilities**:
-  - Apply business rules (business hours, buffers)
-  - Find 2-3 optimal time slots
-  - Consider travel time and preferences
-- **Key Methods**:
-  - `findAvailableSlots()`: Main scheduling algorithm
-  - `applyBusinessRules()`: Filter by constraints
-  - `rankTimeSlots()`: Prioritize suggestions
+### 4. Database Layer (`src/database/`)
+- **Prisma ORM**: Type-safe database operations
+- **Repository Pattern**: Clean data access layer
+  - UserRepository, EmailRepository, CalendarRepository
+- **Connection Management**: Database connection pooling
 
-### 5. Email Response Service (`EmailResponder`)
-- **Purpose**: Generate and send response emails
-- **Responsibilities**:
-  - Generate professional email responses
-  - Include suggested meeting times
-  - Send via Gmail API
-- **Key Methods**:
-  - `generateResponse()`: Create email content
-  - `sendResponse()`: Send via Gmail API
-  - `createCalendarInvite()`: Generate invite link
-
-### 6. Configuration Manager (`ConfigManager`)
-- **Purpose**: Manage application settings and preferences
-- **Responsibilities**:
-  - Load environment variables
-  - Validate configuration
-  - Provide runtime settings
-- **Key Methods**:
-  - `loadConfig()`: Initialize settings
-  - `validateConfig()`: Ensure valid setup
-  - `getBusinessHours()`: Return work schedule
+### 5. Frontend Components (`frontend/src/`)
+- **Dashboard**: Real-time overview of system activity
+- **Email Management**: View and manage processed emails
+- **Calendar View**: Display upcoming calendar events
+- **User Configuration**: Manage business hours and preferences
 
 ## Data Flow
 
 ```
-1. Email arrives → EmailMonitor detects new message
-2. EmailParser extracts intent & preferences  
-3. CalendarService fetches current availability
-4. SchedulingEngine finds optimal time slots
-5. EmailResponder generates and sends reply
-6. CalendarService creates pending event (optional)
+1. Email arrives in Gmail → Background EmailProcessingJob detects via API
+2. OpenAIService analyzes email content for demo intent
+3. Email record created/updated in database with analysis results
+4. If demo request detected → ScheduledResponse created with time slots
+5. ResponseSenderJob monitors scheduled responses
+6. When ready → Gmail API sends response with available times
+7. Frontend displays real-time statistics and email processing status
 ```
 
 ## Technology Stack
 
 ### Backend
 - **Runtime**: Node.js 18+
-- **Framework**: Express.js
-- **Language**: TypeScript
-- **Testing**: Jest
+- **Framework**: Express.js with TypeScript
+- **Database**: PostgreSQL with Prisma ORM
+- **Background Jobs**: Node.js cron-based job system
+- **Authentication**: Google OAuth 2.0
 - **API Integration**: Google APIs Client Library
 
 ### Frontend  
 - **Framework**: Next.js 14
 - **Language**: TypeScript + React
 - **Styling**: Tailwind CSS
-- **State Management**: React hooks + Context
+- **Components**: Custom UI components
+- **API Client**: Custom useApi hook
+
+### Database
+- **Database**: PostgreSQL
+- **ORM**: Prisma with type-safe queries
+- **Migrations**: Prisma migrate system
+- **Schema**: User config, email records, calendar events, scheduled responses
 
 ### External Services
 - **Gmail API**: Email monitoring and sending
-- **Google Calendar API**: Calendar management
-- **OpenAI API**: Natural language processing
-- **MCP (Model Context Protocol)**: Enhanced AI integration
+- **Google Calendar API**: Calendar event management  
+- **OpenAI API**: Email intent analysis and NLP
+- **Calendar MCP**: Enhanced calendar integration via Model Context Protocol
 
 ## Security Considerations
 

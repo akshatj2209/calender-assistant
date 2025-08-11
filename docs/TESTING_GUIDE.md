@@ -1,15 +1,14 @@
-# Database Testing Guide
+# Testing Guide - Gmail Calendar Assistant
 
-This guide walks you through testing the PostgreSQL database integration step by step.
+This guide covers testing the complete application stack including database, API, and frontend integration.
 
 ## 🧪 Testing Overview
 
-We'll test the database in this order:
-1. **Database Connection** - PostgreSQL connectivity
-2. **Prisma Setup** - Client generation and migrations
-3. **Repository Layer** - CRUD operations
-4. **Data Relationships** - Foreign keys and joins
-5. **Performance** - Bulk operations and queries
+Current testing infrastructure:
+1. **Database Testing** - PostgreSQL + Prisma integration
+2. **API Integration Testing** - Backend endpoint validation
+3. **Background Jobs Testing** - Email processing and response sending
+4. **Frontend Component Testing** - UI component functionality
 
 ## 🚀 Quick Start Testing
 
@@ -46,10 +45,19 @@ npm run db:seed
 npm run db:studio
 ```
 
-### Step 3: Run Database Tests
+### Step 3: Run Tests
 ```bash
-# Run comprehensive database tests
+# Run database tests
 npm run db:test
+
+# Run API integration tests  
+npm run api:test
+
+# Run complete test suite
+npm run test:full
+
+# Run frontend tests (if available)
+npm test
 ```
 
 ## 📋 Manual Testing Steps

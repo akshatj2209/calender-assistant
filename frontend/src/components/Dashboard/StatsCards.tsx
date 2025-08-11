@@ -1,15 +1,7 @@
 import React from 'react';
+import type { StatsCardProps } from '../../types/dashboard';
 
-interface StatsCardsProps {
-  stats: {
-    totalEmails: number;
-    demoRequests: number;
-    scheduledMeetings: number;
-    responseRate: number;
-  };
-}
-
-const StatsCards: React.FC<StatsCardsProps> = ({ stats }) => {
+const StatsCards: React.FC<StatsCardProps> = ({ stats }) => {
   const cards = [
     {
       title: 'Total Emails',

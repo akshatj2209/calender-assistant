@@ -108,7 +108,6 @@ export class UserRepository extends BaseRepository<User> {
     return user;
   }
 
-  // Google Tokens management
   async upsertGoogleTokens(userId: string, tokens: {
     accessToken: string;
     refreshToken?: string;
@@ -138,7 +137,6 @@ export class UserRepository extends BaseRepository<User> {
     });
   }
 
-  // Get user statistics (simplified)
   async getUserStats(userId: string, days: number = 30): Promise<{
     totalEmails: number;
     eventsCreated: number;
@@ -173,7 +171,6 @@ export class UserRepository extends BaseRepository<User> {
     };
   }
 
-  // Check if user exists and has valid tokens
   async isUserAuthenticated(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -186,7 +183,6 @@ export class UserRepository extends BaseRepository<User> {
       return false;
     }
 
-    // Check if token is expired (with 5 minute buffer)
     if (user.googleTokens.expiresAt) {
       const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
       if (user.googleTokens.expiresAt <= fiveMinutesFromNow) {
@@ -197,7 +193,6 @@ export class UserRepository extends BaseRepository<User> {
     return true;
   }
 
-  // Get all users with expired tokens
   async getUsersWithExpiredTokens(): Promise<User[]> {
     const now = new Date();
     

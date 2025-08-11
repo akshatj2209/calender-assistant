@@ -1,25 +1,6 @@
 import React from 'react';
 import EmailCard from './EmailCard';
-
-interface Email {
-  id: string;
-  from: string;
-  subject: string;
-  body: string;
-  receivedAt: string;
-  status: 'pending' | 'processed' | 'failed' | 'response_sent';
-  isDemoRequest?: boolean;
-  intentAnalysis?: {
-    confidence: number;
-    intentType: string;
-  };
-  contactInfo?: {
-    name: string;
-    email: string;
-    company?: string;
-  };
-  calendarEvents?: any[];
-}
+import type { Email } from '../../types/email';
 
 interface EmailListProps {
   emails: Email[];

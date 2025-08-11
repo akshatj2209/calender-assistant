@@ -1,24 +1,8 @@
 import { EmailMessageModel } from '@/models/EmailMessage';
-import { EmailMessage } from '@/types';
+import { EmailMessage, GmailQuery, EmailSendOptions, GmailMessageListResponse } from '@/types';
 import { google } from 'googleapis';
 import { authService } from './AuthService';
 import { userConfigService } from './UserConfigService';
-
-export interface GmailQuery {
-  query?: string;
-  maxResults?: number;
-  pageToken?: string;
-  labelIds?: string[];
-}
-
-export interface EmailSendOptions {
-  to: string;
-  subject: string;
-  body: string;
-  replyToMessageId?: string;
-  threadId?: string;
-  isHtml?: boolean;
-}
 
 export class GmailService {
   private gmail: any;
@@ -28,7 +12,6 @@ export class GmailService {
     this.gmail = null;
   }
 
-  // Set user-specific tokens
   setUserTokens(accessToken: string, refreshToken: string): void {
     const { OAuth2 } = google.auth;
     this.userSpecificAuth = new OAuth2(
@@ -42,17 +25,14 @@ export class GmailService {
       refresh_token: refreshToken,
     });
     
-    // Initialize Gmail client with user-specific auth
     this.gmail = google.gmail({ version: 'v1', auth: this.userSpecificAuth });
   }
 
   private async ensureAuthenticated(): Promise<void> {
-    // If we have user-specific authentication, use it
     if (this.userSpecificAuth && this.gmail) {
       return;
     }
     
-    // Fall back to global auth service for backward compatibility
     const isValid = await authService.ensureValidToken();
     if (!isValid) {
       throw new Error('Gmail API requires authentication. Please authenticate first.');
@@ -76,11 +56,7 @@ export class GmailService {
     }
   }
 
-  async listMessages(options: GmailQuery = {}): Promise<{
-    messages: any[];
-    nextPageToken?: string;
-    resultSizeEstimate: number;
-  }> {
+  async listMessages(options: GmailQuery = {}): Promise<GmailMessageListResponse> {
     await this.ensureAuthenticated();
 
     const {
@@ -91,7 +67,6 @@ export class GmailService {
     } = options;
 
     try {
-      // Build request parameters - only include labelIds if they are explicitly provided
       const requestParams: any = {
         userId: 'me',
         q: query,
@@ -99,8 +74,6 @@ export class GmailService {
         pageToken
       };
 
-      // Only add labelIds if they are explicitly provided
-      // This allows the query to use its own label filtering (like "in:inbox OR in:sent")
       if (labelIds && labelIds.length > 0) {
         requestParams.labelIds = labelIds;
       }
@@ -161,11 +134,9 @@ export class GmailService {
         return [];
       }
 
-      // Get full message details
       const messageIds = listResult.messages.map(msg => msg.id);
       const fullMessages = await this.getMessages(messageIds);
 
-      // Convert to EmailMessage models
       return fullMessages.map(msg => EmailMessageModel.fromGmailMessage(msg));
     } catch (error) {
       console.error('Gmail: Failed to search emails:', error);
@@ -197,10 +168,8 @@ export class GmailService {
     const { to, subject, body, replyToMessageId, threadId, isHtml = false } = options;
 
     try {
-      // Get the original message if replying to extract proper Message-ID
       let originalMessageId = replyToMessageId;
       if (replyToMessageId && !replyToMessageId.includes('@')) {
-        // If we have a Gmail message ID, get the actual Message-ID header
         try {
           const originalMessage = await this.getMessage(replyToMessageId);
           const messageIdHeader = originalMessage.payload?.headers?.find(
@@ -215,7 +184,6 @@ export class GmailService {
       }
       const config = await userConfigService.getUserConfig(userId);
 
-      // Create email message in RFC 2822 format
       const headers = [
         `From: ${config?.salesName} <${config?.salesEmail}>`,
         `To: ${to}`,
@@ -238,7 +206,6 @@ export class GmailService {
       console.log('Gmail: Raw email content:', email.substring(0, 200) + '...');
       console.log('Gmail: Body parameter:', body?.substring(0, 100) + '...');
 
-      // Encode email in base64url format (Gmail API requirement)
       const encodedEmail = Buffer.from(email, 'utf8')
         .toString('base64')
         .replace(/\+/g, '-')
@@ -251,7 +218,6 @@ export class GmailService {
         raw: encodedEmail
       };
 
-      // Only add threadId if we're replying to maintain conversation threading
       if (threadId) {
         requestBody.threadId = threadId;
       }
@@ -263,7 +229,6 @@ export class GmailService {
 
       console.log('Gmail: Email sent successfully:', response.data.id);
       
-      // Return both the sent message data and the thread ID for tracking
       return {
         ...response.data,
         threadId: response.data.threadId || threadId,
@@ -397,7 +362,6 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
     }
   }
 
-  // Get thread messages to track email conversations
   async getThreadMessages(threadId: string): Promise<any[]> {
     await this.ensureAuthenticated();
     
@@ -415,12 +379,10 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
     }
   }
 
-  // Search for replies to a specific message by thread ID
   async searchRepliesInThread(threadId: string, afterMessageId: string): Promise<EmailMessage[]> {
     try {
       const threadMessages = await this.getThreadMessages(threadId);
       
-      // Find the index of the original message
       let originalMessageIndex = -1;
       for (let i = 0; i < threadMessages.length; i++) {
         if (threadMessages[i].id === afterMessageId) {
@@ -433,10 +395,8 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
         return [];
       }
       
-      // Get messages that came after the original message
       const replyMessages = threadMessages.slice(originalMessageIndex + 1);
       
-      // Convert to EmailMessage format
       return replyMessages.map(msg => EmailMessageModel.fromGmailMessage(msg));
     } catch (error) {
       console.error('Gmail: Failed to search replies in thread:', error);
@@ -444,7 +404,6 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
     }
   }
 
-  // Utility method to test connection
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
       await this.getProfile();
@@ -457,10 +416,7 @@ ${authService.getAuthenticatedClient().salesName || 'Sales Team'}`;
     }
   }
 
-  // Get API usage stats (if available)
   async getApiUsage(): Promise<any> {
-    // This would require additional API calls or monitoring
-    // For now, return basic info
     try {
       const profile = await this.getProfile();
       return {
