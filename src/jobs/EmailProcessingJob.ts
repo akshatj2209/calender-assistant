@@ -6,7 +6,7 @@ import { calendarService } from '@/services/CalendarMCP';
 import { gmailService } from '@/services/GmailService';
 import { openaiService } from '@/services/OpenAIService';
 import { EmailMessage } from '@/types';
-import { EmailDirection, Prisma, ProcessingStatus } from '@prisma/client';
+import { EmailDirection, Prisma, ProcessingStatus, ResponseStatus } from '@prisma/client';
 import { CronJob } from 'cron';
 
 export class EmailProcessingJob {
@@ -183,6 +183,7 @@ export class EmailProcessingJob {
         body: mcpAnalysis.emailResponse,
         proposedTimeSlots: timeSlots as Prisma.InputJsonValue,
         scheduledAt,
+        status: ResponseStatus.SCHEDULED
       });
 
       console.log(`🤖 ✅ MCP-scheduled response created with ID: ${createdResponse.id}`);

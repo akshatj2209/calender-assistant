@@ -168,19 +168,6 @@ async analyzeEmailIntent(email: EmailMessage): Promise<{
   keywords: string[];
 }>;
 
-// Reply analysis for positive responses
-async analyzeReplyForPositiveResponse(
-  replyEmail: EmailMessage, 
-  originalProposedSlots: any[]
-): Promise<{
-  isPositive: boolean;
-  confidence: number;
-  reasoning: string;
-  selectedTimeSlot?: number;
-  customTimeProposed?: any;
-}>;
-```
-
 ## Error Handling and Reliability
 
 ### Retry Mechanism

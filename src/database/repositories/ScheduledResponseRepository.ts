@@ -1,4 +1,4 @@
-import { ScheduledResponse, ResponseStatus, Prisma } from '@prisma/client';
+import { Prisma, ResponseStatus, ScheduledResponse } from '@prisma/client';
 import { BaseRepository } from './BaseRepository';
 
 export interface CreateScheduledResponseData {
@@ -10,6 +10,7 @@ export interface CreateScheduledResponseData {
   body: string;
   proposedTimeSlots: Prisma.InputJsonValue;
   scheduledAt: Date;
+  status: ResponseStatus;
 }
 
 export interface UpdateScheduledResponseData {
