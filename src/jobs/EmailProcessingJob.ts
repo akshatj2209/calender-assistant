@@ -230,6 +230,9 @@ export class EmailProcessingJob {
 
       console.log(`🤖 ✅ MCP-scheduled response created with ID: ${createdResponse.id}`);
 
+      // Send Slack notification if configured
+      await this.sendSlackNotification(email, mcpAnalysis.contactInfo, createdResponse, timeSlots);
+
       // Mark email as processed  
       await this.emailRepository.markAsProcessed(emailRecord.id, true);
 
@@ -821,6 +824,104 @@ Sales Team`;
       lastRun: undefined, // CronJob lastDate/nextDate have type issues
       nextRun: undefined
     };
+  }
+
+  private async sendSlackNotification(
+    email: EmailMessage, 
+    contactInfo: { name: string; email: string }, 
+    scheduledResponse: any,
+    timeSlots: any[]
+  ): Promise<void> {
+    try {
+      const slackWebhookUrl = process.env.SLACK_NOTIFICATION_URL;
+      
+      if (!slackWebhookUrl) {
+        console.log('🤖 SLACK_NOTIFICATION_URL not configured, skipping Slack notification');
+        return;
+      }
+
+      const slotsText = timeSlots
+        .map((slot, index) => `${index + 1}. ${slot.formatted}`)
+        .join('\n');
+
+      const message = {
+        text: "🎯 Demo Request Received & Auto-Reply Generated!",
+        blocks: [
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "🎯 New Demo Request Processed"
+            }
+          },
+          {
+            type: "section",
+            fields: [
+              {
+                type: "mrkdwn",
+                text: `*Contact:* ${contactInfo.name}\n*Email:* ${contactInfo.email}`
+              },
+              {
+                type: "mrkdwn",
+                text: `*Subject:* ${email.subject}\n*Scheduled At:* ${scheduledResponse.scheduledAt.toLocaleString()}`
+              }
+            ]
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*Proposed Time Slots:*\n${slotsText}`
+            }
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*Auto-Generated Reply Preview:*\n_${scheduledResponse.body.substring(0, 200)}${scheduledResponse.body.length > 200 ? '...' : ''}_`
+            }
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: {
+                  type: "plain_text",
+                  text: "📊 Open Dashboard"
+                },
+                url: `${process.env.DASHBOARD_URL || 'http://localhost:3000'}`,
+                style: "primary"
+              },
+              {
+                type: "button",
+                text: {
+                  type: "plain_text",
+                  text: "✏️ Edit Response"
+                },
+                url: `${process.env.DASHBOARD_URL || 'http://localhost:3000'}/scheduled-responses`
+              }
+            ]
+          }
+        ]
+      };
+
+      const response = await fetch(slackWebhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(message),
+      });
+
+      if (response.ok) {
+        console.log('🤖 ✅ Slack notification sent successfully');
+      } else {
+        console.error('🤖 ❌ Failed to send Slack notification:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('🤖 ❌ Error sending Slack notification:', error);
+    }
   }
 }
 
