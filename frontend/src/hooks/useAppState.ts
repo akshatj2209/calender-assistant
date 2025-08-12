@@ -1,7 +1,7 @@
 import { useAppContext } from '../context/AppContext';
 
 export const useAppState = () => {
-  const { state, actions } = useAppContext();
+  const { state, checkAuthStatus, logout, refreshTokens, switchUser, clearUser } = useAppContext();
   
   return {
     // Auth state
@@ -16,24 +16,17 @@ export const useAppState = () => {
     userLoading: state.user.loading,
     userError: state.user.error,
     
-    // Dashboard state
-    dashboardLoading: state.dashboard.loading,
-    dashboardError: state.dashboard.error,
-    
     // Actions
-    checkAuthStatus: actions.checkAuthStatus,
-    logout: actions.logout,
-    refreshTokens: actions.refreshTokens,
-    switchUser: actions.switchUser,
-    clearUser: actions.clearUser,
-    setDashboardLoading: actions.setDashboardLoading,
-    setDashboardError: actions.setDashboardError,
-    clearErrors: actions.clearErrors,
+    checkAuthStatus,
+    logout,
+    refreshTokens,
+    switchUser,
+    clearUser,
   };
 };
 
 export const useAuth = () => {
-  const { state, actions } = useAppContext();
+  const { state, logout, refreshTokens, checkAuthStatus } = useAppContext();
   
   return {
     user: state.auth.user,
@@ -42,21 +35,21 @@ export const useAuth = () => {
     initialized: state.appInitialized,
     isAuthenticated: !!state.auth.user,
     hasValidTokens: state.auth.user?.hasGoogleTokens || false,
-    logout: actions.logout,
-    refreshTokens: actions.refreshTokens,
-    checkAuthStatus: actions.checkAuthStatus
+    logout,
+    refreshTokens,
+    checkAuthStatus
   };
 };
 
 export const useUser = () => {
-  const { state, actions } = useAppContext();
+  const { state, switchUser, clearUser } = useAppContext();
   
   return {
     currentUser: state.user.currentUser,
     loading: state.user.loading,
     error: state.user.error,
-    switchUser: actions.switchUser,
-    clearUser: actions.clearUser,
+    switchUser,
+    clearUser,
     isAuthenticated: !!state.user.currentUser
   };
 };

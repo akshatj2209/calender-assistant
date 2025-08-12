@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useAppState } from '../../hooks/useAppState';
+import type { DashboardTab } from '../../types/dashboard';
 import Header from '../Layout/Header';
 import LoadingSpinner from '../UI/LoadingSpinner';
-import DashboardStatsCards from './DashboardStatsCards';
-import DashboardEmailList from './DashboardEmailList';
 import DashboardCalendarView from './DashboardCalendarView';
-import type { DashboardTab } from '../../types/dashboard';
+import DashboardEmailList from './DashboardEmailList';
+import DashboardStatsCards from './DashboardStatsCards';
 
 const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -14,7 +14,6 @@ const Dashboard: React.FC = () => {
     currentUser,
     userLoading,
     userError,
-    clearErrors
   } = useAppState();
 
   const handleRefresh = () => {
@@ -44,9 +43,6 @@ const Dashboard: React.FC = () => {
           <div className="space-x-2">
             <button onClick={handleRefresh} className="btn-primary">
               Try Again
-            </button>
-            <button onClick={clearErrors} className="btn-secondary">
-              Clear Error
             </button>
           </div>
         </div>

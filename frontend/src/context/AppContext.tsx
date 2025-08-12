@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useApi } from '../hooks/useApi';
 import type { AuthUser, User } from '../types/user';
 
@@ -13,115 +13,17 @@ interface AppState {
     loading: boolean;
     error: string | null;
   };
-  dashboard: {
-    loading: boolean;
-    error: string | null;
-  };
   appInitialized: boolean;
 }
 
-type AppAction =
-  | { type: 'AUTH_LOADING'; payload: boolean }
-  | { type: 'AUTH_SUCCESS'; payload: AuthUser | null }
-  | { type: 'AUTH_ERROR'; payload: string | null }
-  | { type: 'USER_LOADING'; payload: boolean }
-  | { type: 'USER_SUCCESS'; payload: User | null }
-  | { type: 'USER_ERROR'; payload: string | null }
-  | { type: 'DASHBOARD_LOADING'; payload: boolean }
-  | { type: 'DASHBOARD_ERROR'; payload: string | null }
-  | { type: 'APP_INITIALIZED' }
-  | { type: 'CLEAR_ALL_ERRORS' };
-
 interface AppContextType {
   state: AppState;
-  actions: {
-    checkAuthStatus: () => Promise<void>;
-    logout: () => Promise<void>;
-    refreshTokens: () => Promise<boolean>;
-    switchUser: (email: string, name: string) => Promise<User | null>;
-    clearUser: () => void;
-    setDashboardLoading: (loading: boolean) => void;
-    setDashboardError: (error: string | null) => void;
-    clearErrors: () => void;
-  };
+  checkAuthStatus: () => Promise<void>;
+  logout: () => Promise<void>;
+  refreshTokens: () => Promise<boolean>;
+  switchUser: (email: string, name: string) => Promise<User | null>;
+  clearUser: () => void;
 }
-
-const initialState: AppState = {
-  auth: {
-    user: null,
-    loading: true,
-    error: null,
-  },
-  user: {
-    currentUser: null,
-    loading: true,
-    error: null,
-  },
-  dashboard: {
-    loading: false,
-    error: null,
-  },
-  appInitialized: false,
-};
-
-const appReducer = (state: AppState, action: AppAction): AppState => {
-  switch (action.type) {
-    case 'AUTH_LOADING':
-      return {
-        ...state,
-        auth: { ...state.auth, loading: action.payload }
-      };
-    case 'AUTH_SUCCESS':
-      return {
-        ...state,
-        auth: { ...state.auth, user: action.payload, loading: false, error: null }
-      };
-    case 'AUTH_ERROR':
-      return {
-        ...state,
-        auth: { ...state.auth, error: action.payload, loading: false }
-      };
-    case 'USER_LOADING':
-      return {
-        ...state,
-        user: { ...state.user, loading: action.payload }
-      };
-    case 'USER_SUCCESS':
-      return {
-        ...state,
-        user: { ...state.user, currentUser: action.payload, loading: false, error: null }
-      };
-    case 'USER_ERROR':
-      return {
-        ...state,
-        user: { ...state.user, error: action.payload, loading: false }
-      };
-    case 'DASHBOARD_LOADING':
-      return {
-        ...state,
-        dashboard: { ...state.dashboard, loading: action.payload }
-      };
-    case 'DASHBOARD_ERROR':
-      return {
-        ...state,
-        dashboard: { ...state.dashboard, error: action.payload }
-      };
-    case 'APP_INITIALIZED':
-      return {
-        ...state,
-        appInitialized: true
-      };
-    case 'CLEAR_ALL_ERRORS':
-      return {
-        ...state,
-        auth: { ...state.auth, error: null },
-        user: { ...state.user, error: null },
-        dashboard: { ...state.dashboard, error: null },
-      };
-    default:
-      return state;
-  }
-};
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -138,18 +40,42 @@ interface AppProviderProps {
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
+  const [userError, setUserError] = useState<string | null>(null);
+  
+  const [appInitialized, setAppInitialized] = useState(false);
+  
   const api = useApi();
+
+  const state: AppState = {
+    auth: {
+      user: authUser,
+      loading: authLoading,
+      error: authError,
+    },
+    user: {
+      currentUser,
+      loading: userLoading,
+      error: userError,
+    },
+    appInitialized,
+  };
 
   const checkAuthStatus = async () => {
     try {
-      dispatch({ type: 'AUTH_LOADING', payload: true });
-      dispatch({ type: 'AUTH_ERROR', payload: null });
+      setAuthLoading(true);
+      setAuthError(null);
 
       const userId = localStorage.getItem('gmail_assistant_user_id');
       
       if (!userId) {
-        dispatch({ type: 'AUTH_SUCCESS', payload: null });
+        setAuthUser(null);
+        setAuthLoading(false);
         return;
       }
 
@@ -163,27 +89,29 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
           name: responseData.user?.name,
           hasGoogleTokens: responseData.hasValidTokens
         };
-        dispatch({ type: 'AUTH_SUCCESS', payload: user });
+        setAuthUser(user);
       } else {
-        dispatch({ type: 'AUTH_SUCCESS', payload: null });
+        setAuthUser(null);
         localStorage.removeItem('gmail_assistant_user_id');
         localStorage.removeItem('gmail_assistant_user_email');
       }
+      setAuthLoading(false);
     } catch (err: any) {
       if (err.status === 401 || err.status === 404) {
         localStorage.removeItem('gmail_assistant_user_id');
         localStorage.removeItem('gmail_assistant_user_email');
-        dispatch({ type: 'AUTH_SUCCESS', payload: null });
+        setAuthUser(null);
       } else {
-        dispatch({ type: 'AUTH_ERROR', payload: err.message || 'Failed to check authentication status' });
+        setAuthError(err.message || 'Failed to check authentication status');
       }
+      setAuthLoading(false);
     }
   };
 
   const logout = async () => {
     try {
-      if (state.auth.user) {
-        await api.post('/auth/logout', { userId: state.auth.user.id });
+      if (authUser) {
+        await api.post('/auth/logout', { userId: authUser.id });
       }
     } catch (err) {
       console.warn('Logout API call failed:', err);
@@ -191,17 +119,18 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       localStorage.removeItem('gmail_assistant_user_id');
       localStorage.removeItem('gmail_assistant_user_email');
       
-      // Clear auth and user state, keep app initialized for immediate redirect
-      dispatch({ type: 'AUTH_SUCCESS', payload: null });
-      dispatch({ type: 'USER_SUCCESS', payload: null });
+      setAuthUser(null);
+      setCurrentUser(null);
+      setAuthError(null);
+      setUserError(null);
     }
   };
 
   const refreshTokens = async (): Promise<boolean> => {
-    if (!state.auth.user) return false;
+    if (!authUser) return false;
 
     try {
-      const response = await api.post('/auth/refresh', { userId: state.auth.user.id });
+      const response = await api.post('/auth/refresh', { userId: authUser.id });
       return (response.data as any)?.success || false;
     } catch (err) {
       return false;
@@ -210,8 +139,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   const initializeUser = async () => {
     try {
-      dispatch({ type: 'USER_LOADING', payload: true });
-      dispatch({ type: 'USER_ERROR', payload: null });
+      setUserLoading(true);
+      setUserError(null);
 
       const savedUserId = localStorage.getItem('gmail_assistant_user_id');
       const savedUserEmail = localStorage.getItem('gmail_assistant_user_email');
@@ -220,10 +149,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         try {
           const response = await api.users.getById(savedUserId);
           const user = (response.data as any).user;
-          dispatch({ type: 'USER_SUCCESS', payload: user });
+          setCurrentUser(user);
           
           localStorage.setItem('gmail_assistant_user_id', user.id);
           localStorage.setItem('gmail_assistant_user_email', user.email);
+          setUserLoading(false);
           return;
         } catch (err) {
           localStorage.removeItem('gmail_assistant_user_id');
@@ -240,54 +170,47 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       });
       
       const user = (response.data as any).user;
-      dispatch({ type: 'USER_SUCCESS', payload: user });
+      setCurrentUser(user);
       localStorage.setItem('gmail_assistant_user_id', user.id);
       localStorage.setItem('gmail_assistant_user_email', user.email);
+      setUserLoading(false);
 
     } catch (err: any) {
-      dispatch({ type: 'USER_ERROR', payload: err.message || 'Failed to initialize user' });
+      setUserError(err.message || 'Failed to initialize user');
+      setUserLoading(false);
     }
   };
 
   const switchUser = async (email: string, name: string): Promise<User | null> => {
     try {
-      dispatch({ type: 'USER_LOADING', payload: true });
-      dispatch({ type: 'USER_ERROR', payload: null });
+      setUserLoading(true);
+      setUserError(null);
 
       try {
         const response = await api.users.getByEmail(email);
         const user = (response.data as any).user;
-        dispatch({ type: 'USER_SUCCESS', payload: user });
+        setCurrentUser(user);
         localStorage.setItem('gmail_assistant_user_id', user.id);
+        setUserLoading(false);
         return user;
       } catch {
         const response = await api.users.create({ email, name });
         const user = (response.data as any).user;
-        dispatch({ type: 'USER_SUCCESS', payload: user });
+        setCurrentUser(user);
         localStorage.setItem('gmail_assistant_user_id', user.id);
+        setUserLoading(false);
         return user;
       }
     } catch (err: any) {
-      dispatch({ type: 'USER_ERROR', payload: err.message || 'Failed to switch user' });
+      setUserError(err.message || 'Failed to switch user');
+      setUserLoading(false);
       return null;
     }
   };
 
   const clearUser = () => {
-    dispatch({ type: 'USER_SUCCESS', payload: null });
+    setCurrentUser(null);
     localStorage.removeItem('gmail_assistant_user_id');
-  };
-
-  const setDashboardLoading = (loading: boolean) => {
-    dispatch({ type: 'DASHBOARD_LOADING', payload: loading });
-  };
-
-  const setDashboardError = (error: string | null) => {
-    dispatch({ type: 'DASHBOARD_ERROR', payload: error });
-  };
-
-  const clearErrors = () => {
-    dispatch({ type: 'CLEAR_ALL_ERRORS' });
   };
 
   useEffect(() => {
@@ -296,22 +219,22 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       
       try {
         if (savedUserId) {
-          // When we have saved user, wait for both user and auth to complete
           await initializeUser();
           await checkAuthStatus();
-          // Only mark as initialized after BOTH complete
-          dispatch({ type: 'APP_INITIALIZED' });
+          setAppInitialized(true);
         } else {
-          // No saved user - mark as initialized immediately
-          dispatch({ type: 'AUTH_SUCCESS', payload: null });
-          dispatch({ type: 'USER_SUCCESS', payload: null });
-          dispatch({ type: 'APP_INITIALIZED' });
+          setAuthUser(null);
+          setAuthLoading(false);
+          setCurrentUser(null);
+          setUserLoading(false);
+          setAppInitialized(true);
         }
       } catch (error) {
-        // Handle any initialization errors
-        dispatch({ type: 'AUTH_SUCCESS', payload: null });
-        dispatch({ type: 'USER_SUCCESS', payload: null });
-        dispatch({ type: 'APP_INITIALIZED' });
+        setAuthUser(null);
+        setAuthLoading(false);
+        setCurrentUser(null);
+        setUserLoading(false);
+        setAppInitialized(true);
       }
     };
     
@@ -320,16 +243,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   const contextValue: AppContextType = {
     state,
-    actions: {
-      checkAuthStatus,
-      logout,
-      refreshTokens,
-      switchUser,
-      clearUser,
-      setDashboardLoading,
-      setDashboardError,
-      clearErrors,
-    },
+    checkAuthStatus,
+    logout,
+    refreshTokens,
+    switchUser,
+    clearUser,
   };
 
   return (
