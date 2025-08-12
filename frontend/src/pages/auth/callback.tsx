@@ -20,17 +20,14 @@ const AuthCallback: React.FC = () => {
 
         // Handle success from backend redirect
         if (success === 'true' && userId && email) {
-          console.log('✅ Authentication successful via redirect');
           setStatus('success');
           setMessage('Authentication successful! Redirecting to dashboard...');
 
-          // Store user info in localStorage
           localStorage.setItem('gmail_assistant_user_id', userId as string);
           localStorage.setItem('gmail_assistant_user_email', email as string);
 
-          // Redirect to dashboard after 2 seconds
           setTimeout(() => {
-            router.push('/');
+            window.location.href = '/';
           }, 2000);
           return;
         }
@@ -39,7 +36,6 @@ const AuthCallback: React.FC = () => {
         throw new Error('Authentication did not complete successfully');
 
       } catch (err: any) {
-        console.error('❌ Auth callback error:', err);
         setStatus('error');
         setMessage(err.message || 'Authentication failed');
       }

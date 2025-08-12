@@ -1,161 +1,54 @@
-import React, { useEffect, useState } from 'react';
-import { useApi } from '../../hooks/useApi';
-import { useUser } from '../../hooks/useUser';
-import CalendarView from '../Calendar/CalendarView';
-import EmailList from '../Email/EmailList';
+import React, { useState } from 'react';
+import { useAppState } from '../../hooks/useAppState';
 import Header from '../Layout/Header';
 import LoadingSpinner from '../UI/LoadingSpinner';
-import StatsCards from './StatsCards';
-import type { DashboardData, DashboardTab } from '../../types/dashboard';
+import DashboardStatsCards from './DashboardStatsCards';
+import DashboardEmailList from './DashboardEmailList';
+import DashboardCalendarView from './DashboardCalendarView';
+import type { DashboardTab } from '../../types/dashboard';
 
 const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   
-  const api = useApi();
-  const { currentUser, loading: userLoading, error: userError } = useUser();
-
-  const fetchDashboardData = async () => {
-    if (!currentUser) {
-      console.log('⏳ Waiting for user to be loaded...');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      console.log('📊 Fetching dashboard data for user:', currentUser.email);
-
-      // Note: Use live Google Calendar upcoming endpoint so we include external events
-      const [emailsResult, googleEventsResult, emailStatsResult, calendarStatsResult] = await Promise.allSettled([
-        api.get(`/emails?limit=10&userId=${currentUser.id}`),
-        api.get(`/calendar/upcoming?days=7`),
-        api.get(`/emails/stats?days=30&userId=${currentUser.id}`),
-        api.get(`/calendar-events/stats?days=30&userId=${currentUser.id}`)
-      ]);
-
-      // Process results with fallbacks
-      const emails = emailsResult.status === 'fulfilled' 
-        ? ((emailsResult.value.data as any)?.emails || [])
-        : [];
-      
-      // Map Google Calendar events to UI shape expected by CalendarView
-      const calendarEvents = googleEventsResult.status === 'fulfilled'
-        ? (((googleEventsResult.value.data as any)?.events || []).map((ev: any) => {
-            const startDateTime = ev?.start?.dateTime || ev?.start?.date;
-            const endDateTime = ev?.end?.dateTime || ev?.end?.date;
-            const timezone = ev?.start?.timezone || ev?.start?.timeZone || 'UTC';
-            const attendees = Array.isArray(ev?.attendees) ? ev.attendees : [];
-            const primaryAttendee = attendees.find((a: any) => !a.organizer) || attendees[0] || {};
-            const statusRaw = (ev?.status || 'confirmed') as string;
-            const status = statusRaw === 'confirmed' ? 'confirmed' : statusRaw === 'cancelled' ? 'cancelled' : 'scheduled';
-            return {
-              id: ev.id,
-              summary: ev.summary || 'Busy',
-              description: ev.description,
-              startTime: startDateTime,
-              endTime: endDateTime,
-              timezone,
-              attendeeEmail: primaryAttendee.email || '',
-              attendeeName: primaryAttendee.displayName || primaryAttendee.name || undefined,
-              isDemo: false,
-              status,
-              meetingType: 'meeting',
-            };
-          }))
-        : [];
-
-      const emailStats = emailStatsResult.status === 'fulfilled' 
-        ? (emailStatsResult.value.data as any)?.stats 
-        : { total: 0, demoRequests: 0, responsesSent: 0 };
-
-      const calendarStats = calendarStatsResult.status === 'fulfilled' 
-        ? (calendarStatsResult.value.data as any)?.stats 
-        : { totalEvents: 0 };
-
-      // Log what we got
-      console.log('📧 Emails fetched:', emails.length);
-      console.log('📅 Calendar events fetched:', calendarEvents.length);
-      console.log('📊 Email stats:', emailStats);
-      console.log('📊 Calendar stats:', calendarStats);
-
-      const data: DashboardData = {
-        emails,
-        calendarEvents,
-        stats: {
-          totalEmails: emailStats.total || 0,
-          demoRequests: emailStats.demoRequests || 0,
-          scheduledMeetings: calendarStats.totalEvents || 0,
-          responseRate: emailStats.responsesSent && emailStats.total 
-            ? Math.round((emailStats.responsesSent / emailStats.total) * 100)
-            : 0
-        }
-      };
-
-      setDashboardData(data);
-
-      // Log any failed requests
-      [emailsResult, googleEventsResult, emailStatsResult, calendarStatsResult].forEach((result, index) => {
-        if (result.status === 'rejected') {
-          const endpoints = ['/emails', '/api/calendar/upcoming', '/emails/stats', '/calendar-events/stats'];
-          console.warn(`⚠️ Failed to fetch ${endpoints[index]}:`, result.reason);
-        }
-      });
-
-    } catch (err: any) {
-      console.error('❌ Dashboard fetch error:', err);
-      const errorMessage = err.status === 0 
-        ? 'Cannot connect to server. Please check if the backend is running on http://localhost:3001'
-        : err.response?.data?.error || err.message || 'Failed to load dashboard data';
-      
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (currentUser) {
-      fetchDashboardData();
-    }
-  }, [currentUser]);
+  const {
+    currentUser,
+    userLoading,
+    userError,
+    clearErrors
+  } = useAppState();
 
   const handleRefresh = () => {
-    fetchDashboardData();
+    // Full page refresh now works properly with persistent context
+    window.location.reload();
   };
 
-  // Show loading while user is being loaded or dashboard data is being fetched
-  if (userLoading || (currentUser && loading)) {
+  // Show loading while user is being loaded
+  if (userLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <LoadingSpinner size="lg" />
-          <p className="text-gray-600 mt-4">
-            {userLoading ? 'Initializing user...' : 'Loading dashboard...'}
-          </p>
+          <p className="text-gray-600 mt-4">Initializing user...</p>
         </div>
       </div>
     );
   }
 
-  // Show error if user loading failed or dashboard loading failed
-  if (userError || error) {
+  // Show error if user loading failed
+  if (userError) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-red-600 text-xl mb-4">⚠️ Error</div>
-          <p className="text-gray-600 mb-4">
-            {userError || error}
-          </p>
-          <button 
-            onClick={handleRefresh}
-            className="btn-primary"
-          >
-            Try Again
-          </button>
+          <p className="text-gray-600 mb-4">{userError}</p>
+          <div className="space-x-2">
+            <button onClick={handleRefresh} className="btn-primary">
+              Try Again
+            </button>
+            <button onClick={clearErrors} className="btn-secondary">
+              Clear Error
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -192,12 +85,7 @@ const Dashboard: React.FC = () => {
       <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            <StatsCards stats={dashboardData?.stats || {
-              totalEmails: 0,
-              demoRequests: 0,
-              scheduledMeetings: 0,
-              responseRate: 0
-            }} />
+            <DashboardStatsCards />
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Recent Emails */}
@@ -211,10 +99,7 @@ const Dashboard: React.FC = () => {
                     View All →
                   </button>
                 </div>
-                <EmailList 
-                  emails={dashboardData?.emails.slice(0, 5) || []}
-                  compact={true}
-                />
+                <DashboardEmailList compact={true} limit={5} />
               </div>
 
               {/* Upcoming Meetings */}
@@ -228,10 +113,7 @@ const Dashboard: React.FC = () => {
                     View Calendar →
                   </button>
                 </div>
-                <CalendarView 
-                  events={dashboardData?.calendarEvents.slice(0, 5) || []}
-                  compact={true}
-                />
+                <DashboardCalendarView compact={true} limit={5} />
               </div>
             </div>
           </div>
@@ -241,17 +123,8 @@ const Dashboard: React.FC = () => {
           <div className="card">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Email Management</h2>
-              <button 
-                onClick={handleRefresh}
-                className="btn-secondary"
-              >
-                🔄 Refresh
-              </button>
             </div>
-            <EmailList 
-              emails={dashboardData?.emails || []}
-              compact={false}
-            />
+            <DashboardEmailList compact={false} />
           </div>
         )}
 
@@ -259,17 +132,8 @@ const Dashboard: React.FC = () => {
           <div className="card">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Calendar Events</h2>
-              <button 
-                onClick={handleRefresh}
-                className="btn-secondary"
-              >
-                🔄 Refresh
-              </button>
             </div>
-            <CalendarView 
-              events={dashboardData?.calendarEvents || []}
-              compact={false}
-            />
+            <DashboardCalendarView compact={false} />
           </div>
         )}
       </main>

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../hooks/useAppState';
 import LoadingSpinner from '../UI/LoadingSpinner';
 
 interface ProtectedRouteProps {
@@ -12,26 +12,25 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children, 
   requireTokens = true 
 }) => {
-  const { user, loading, isAuthenticated, hasValidTokens } = useAuth();
+  const { user, loading, initialized, isAuthenticated, hasValidTokens } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading) {
+    if (initialized && !loading) {
       if (!isAuthenticated) {
-        console.log('🔒 User not authenticated, redirecting to login');
         router.push('/login');
         return;
       }
 
       if (requireTokens && !hasValidTokens) {
-        console.log('🔑 User missing valid tokens, redirecting to login');
         router.push('/login');
         return;
       }
     }
-  }, [loading, isAuthenticated, hasValidTokens, requireTokens, router]);
+  }, [loading, initialized, isAuthenticated, hasValidTokens, requireTokens, router]);
 
-  if (loading) {
+  // Show loading while authentication is being initialized or checked
+  if (!initialized || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
